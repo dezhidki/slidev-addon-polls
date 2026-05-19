@@ -1,161 +1,189 @@
 /**
- * Slidev Poll Server — WebSocket backend for live polls
+ * Poll Server — WebSocket backend for live polls
+ * Supports per-slide polls with slide-change sync
  */
-const { WebSocketServer, WebSocket } = require('ws')
+const { WebSocketServer, WebSocket } = require("ws");
 
-const PORT = parseInt(process.argv[2] || process.env.PORT || '3031')
-const PRESENTER_TOKEN = process.env.TOKEN || 'changeme'
+const PORT = parseInt(process.env.PORT || "3031");
+const PRESENTER_TOKEN = process.env.PRESENTER_TOKEN || "changeme";
 
-const SESSION_HASH = Math.random().toString(36).slice(2, 8)
-console.log(`[Info] Poll server session hash: ${SESSION_HASH}`)
+const wss = new WebSocketServer({ port: PORT });
+let presenterWs = null;
+const audienceSockets = new Set();
+let allPolls = [];
+let currentSlide = 0;
+let activePolls = {};
 
-const polls = new Map()
-let currentPollId = null
-const presenterClients = new Set()
-const audienceClients = new Set()
+console.log(`[poll-server] Starting on port ${PORT}`);
+console.log(`[poll-server] Presenter token: ${PRESENTER_TOKEN}`);
 
-const wss = new WebSocketServer({ port: PORT, path: '/polls' })
+wss.on("connection", (ws, req) => {
+  const ip = req.socket.remoteAddress;
+  console.log(`[poll-server] New connection from ${ip}`);
 
-function serializePoll(p) {
-  return {
-    id: p.id, question: p.question, type: p.type || 'choice',
-    options: p.options, state: p.state, votes: p.votes,
-    totalVotes: p.votes.reduce((a, b) => a + b, 0),
-    wordCounts: p.wordCounts || {}, correctAnswer: p.correctAnswer,
-    revealed: p.revealed || false
+  ws.on("message", (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw.toString()); } catch { return; }
+
+    switch (msg.type) {
+      case "presenter_connect": {
+        if (msg.token === PRESENTER_TOKEN) {
+          presenterWs = ws;
+          ws.isPresenter = true;
+          console.log(`[poll-server] Presenter authenticated from ${ip}`);
+          ws.send(JSON.stringify({
+            type: "presenter_authenticated",
+            polls: allPolls,
+            currentSlide,
+            activePolls,
+          }));
+        } else {
+          console.log(`[poll-server] Invalid presenter token from ${ip}`);
+          ws.send(JSON.stringify({ type: "auth_failed", reason: "Invalid token" }));
+          ws.close();
+        }
+        break;
+      }
+
+      case "audience_join": {
+        ws.isPresenter = false;
+        audienceSockets.add(ws);
+        console.log(`[poll-server] Audience joined (${audienceSockets.size} total)`);
+        ws.send(JSON.stringify({
+          type: "audience_welcomed",
+          polls: allPolls,
+          currentSlide,
+          activePolls,
+        }));
+        broadcast({ type: "audience_state", audienceCount: audienceSockets.size });
+        break;
+      }
+
+      case "audience_vote": {
+        const poll = allPolls.find((p) => p.id === msg.pollId);
+        if (poll && msg.optionIndex >= 0 && msg.optionIndex < (poll.options || []).length) {
+          if (!poll.votes) poll.votes = new Array((poll.options || []).length).fill(0);
+          poll.votes[msg.optionIndex]++;
+          syncAll();
+        }
+        break;
+      }
+
+      case "polls_define": {
+        allPolls = (msg.polls || []).map((p) => ({
+          ...p,
+          votes: new Array((p.options || []).length).fill(0),
+          state: "idle",
+          revealed: false,
+        }));
+        console.log(`[poll-server] Defined ${allPolls.length} polls`);
+        syncAll();
+        break;
+      }
+
+      case "poll_start": {
+        const poll = allPolls.find((p) => p.id === msg.pollId);
+        if (poll) { poll.state = "voting"; syncAll(); }
+        break;
+      }
+
+      case "poll_stop": {
+        const poll = allPolls.find((p) => p.id === msg.pollId);
+        if (poll) { poll.state = "closed"; syncAll(); }
+        break;
+      }
+
+      case "poll_reset": {
+        const poll = allPolls.find((p) => p.id === msg.pollId);
+        if (poll) {
+          poll.state = "idle";
+          poll.votes = new Array((poll.options || []).length).fill(0);
+          poll.revealed = false;
+          syncAll();
+        }
+        break;
+      }
+
+      case "poll_reveal": {
+        const poll = allPolls.find((p) => p.id === msg.pollId);
+        if (poll) { poll.revealed = true; syncAll(); }
+        break;
+      }
+
+      case "poll_selected": {
+        if (msg.slideIndex !== undefined) {
+          activePolls[msg.slideIndex] = msg.pollId;
+          const payload = JSON.stringify({
+            type: "slide_change",
+            slideIndex: currentSlide,
+            activePollId: activePolls[currentSlide],
+            activePolls,
+            polls: allPolls,
+          });
+          broadcast(payload);
+          if (presenterWs && presenterWs.readyState === WebSocket.OPEN) {
+            presenterWs.send(JSON.stringify({
+              type: "slide_change",
+              slideIndex: currentSlide,
+              activePollId: activePolls[currentSlide],
+              activePolls,
+            }));
+          }
+        }
+        break;
+      }
+
+      case "presenter_navigate": {
+        currentSlide = msg.slideIndex;
+        const payload = JSON.stringify({
+          type: "slide_change",
+          slideIndex: currentSlide,
+          activePollId: activePolls[currentSlide],
+          activePolls,
+          polls: allPolls,
+        });
+        broadcast(payload);
+        if (presenterWs && presenterWs.readyState === WebSocket.OPEN) {
+          presenterWs.send(JSON.stringify({
+            type: "slide_change",
+            slideIndex: currentSlide,
+            activePollId: activePolls[currentSlide],
+            activePolls,
+          }));
+        }
+        break;
+      }
+
+      default:
+        console.log(`[poll-server] Unknown: ${msg.type}`);
+    }
+  });
+
+  ws.on("close", () => {
+    if (ws.isPresenter) {
+      presenterWs = null;
+      console.log("[poll-server] Presenter disconnected");
+    } else {
+      audienceSockets.delete(ws);
+      broadcast({ type: "audience_state", audienceCount: audienceSockets.size });
+    }
+  });
+  ws.on("error", (err) => console.error("[poll-server] WS error:", err.message));
+});
+
+function syncAll() {
+  const state = { type: "poll_state", polls: allPolls, currentSlide, activePolls };
+  broadcast(JSON.stringify(state));
+  if (presenterWs && presenterWs.readyState === WebSocket.OPEN) {
+    presenterWs.send(JSON.stringify(state));
   }
 }
 
-function broadcast(data, targets = null) {
-  const msg = JSON.stringify(data)
-  ;(targets || wss.clients).forEach(c => {
-    if (c.readyState === WebSocket.OPEN) c.send(msg)
-  })
+function broadcast(msg) {
+  const str = typeof msg === "string" ? msg : JSON.stringify(msg);
+  for (const c of audienceSockets) {
+    if (c.readyState === WebSocket.OPEN) c.send(str);
+  }
 }
 
-function broadcastPollState() {
-  broadcast({ type: 'poll_state', polls: Array.from(polls.values()).map(serializePoll) })
-}
-
-function broadcastAudience() {
-  const visible = Array.from(polls.values()).filter(p => p.state !== 'idle')
-  broadcast({ type: 'audience_state', polls: visible.map(serializePoll),
-    audienceCount: audienceClients.size, sessionHash: SESSION_HASH }, audienceClients)
-}
-
-wss.on('connection', (ws, req) => {
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress
-  console.log(`[WS] Connected ${ip}`)
-  ws.isPresenter = false
-  ws.hasVoted = new Set()
-
-  ws.on('message', (raw) => {
-    let msg
-    try { msg = JSON.parse(raw) } catch { return }
-
-    if (msg.type === 'presenter_connect') {
-      if (msg.token !== PRESENTER_TOKEN) {
-        ws.send(JSON.stringify({ type: 'error', message: 'Invalid token' }))
-        ws.close(1008)
-        return
-      }
-      ws.isPresenter = true
-      presenterClients.add(ws)
-      ws.send(JSON.stringify({ type: 'presenter_authenticated' }))
-      broadcastPollState()
-      console.log('[WS] Presenter authenticated')
-      return
-    }
-
-    if (msg.type === 'upsert_poll' && ws.isPresenter) {
-      const p = msg.poll
-      if (!p?.id) return
-      const existing = polls.get(p.id)
-      if (!existing) {
-        polls.set(p.id, { id: p.id, question: p.question || 'Untitled',
-          type: p.type || 'choice', options: p.options || [], state: 'idle',
-          votes: (p.type === 'wordcloud') ? [] : (p.options || []).map(() => 0),
-          wordCounts: {}, correctAnswer: p.correctAnswer, revealed: false })
-        if (!currentPollId) currentPollId = p.id
-      } else {
-        existing.question = p.question ?? existing.question
-        existing.type = p.type ?? existing.type
-        existing.options = p.options ?? existing.options
-        existing.correctAnswer = p.correctAnswer !== undefined ? p.correctAnswer : existing.correctAnswer
-      }
-      broadcastPollState()
-      broadcastAudience()
-      console.log(`[WS] Upserted ${p.id} (${p.type})`)
-      return
-    }
-
-    if (msg.type === 'start_poll' && ws.isPresenter) {
-      const p = polls.get(msg.pollId)
-      if (p) { p.state = 'voting'; currentPollId = msg.pollId; broadcastPollState(); broadcastAudience(); }
-      return
-    }
-    if (msg.type === 'close_poll' && ws.isPresenter) {
-      const p = polls.get(msg.pollId)
-      if (p) { p.state = 'closed'; broadcastPollState(); broadcastAudience(); }
-      return
-    }
-    if (msg.type === 'reveal_answer' && ws.isPresenter) {
-      const p = polls.get(msg.pollId)
-      if (p && p.type === 'quiz') { p.revealed = true; broadcastPollState(); broadcastAudience(); }
-      return
-    }
-    if (msg.type === 'reset_polls' && ws.isPresenter) {
-      polls.clear()
-      currentPollId = null
-      audienceClients.forEach(c => c.hasVoted = new Set())
-      broadcastPollState()
-      broadcastAudience()
-      return
-    }
-    if (msg.type === 'audience_join') {
-      audienceClients.add(ws)
-      broadcastAudience()
-      ws.send(JSON.stringify({ type: 'audience_welcomed',
-        polls: Array.from(polls.values()).filter(p => p.state !== 'idle').map(serializePoll) }))
-      return
-    }
-    if (msg.type === 'audience_vote') {
-      const { pollId, optionIndex } = msg
-      const p = polls.get(pollId)
-      if (!p || !['choice','quiz'].includes(p.type)) return
-      if (p.state !== 'voting') { ws.send(JSON.stringify({ type: 'error', message: 'Not voting' })); return }
-      if (ws.hasVoted.has(pollId)) { ws.send(JSON.stringify({ type: 'error', message: 'Already voted' })); return }
-      if (optionIndex < 0 || optionIndex >= p.options.length) return
-      ws.hasVoted.add(pollId)
-      p.votes[optionIndex]++
-      broadcastPollState()
-      broadcastAudience()
-      ws.send(JSON.stringify({ type: 'vote_acknowledged' }))
-      return
-    }
-    if (msg.type === 'audience_word') {
-      const { pollId, text } = msg
-      const p = polls.get(pollId)
-      if (!p || p.type !== 'wordcloud') return
-      if (p.state !== 'voting') return
-      const word = (text || '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 40)
-      if (!word) return
-      p.wordCounts[word] = (p.wordCounts[word] || 0) + 1
-      ws.hasVoted.add(pollId)
-      broadcastPollState()
-      broadcastAudience()
-      ws.send(JSON.stringify({ type: 'vote_acknowledged' }))
-      return
-    }
-  })
-
-  ws.on('close', () => {
-    if (ws.isPresenter) presenterClients.delete(ws)
-    audienceClients.delete(ws)
-    broadcastAudience()
-    console.log('[WS] Disconnected')
-  })
-})
-
-console.log(`Poll server running on ws://localhost:${PORT}/polls`)
-console.log(`Presenter token: ${PRESENTER_TOKEN.slice(0,3)}***`)
+console.log(`[poll-server] Listening on ws://0.0.0.0:${PORT}/polls`);

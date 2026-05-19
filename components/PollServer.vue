@@ -1,25 +1,66 @@
 <template>
-  <div class="poll-server-badge">
-    <span class="badge-dot" :class="status" />
-    <span class="badge-text">Poll server {{ statusLabel }}</span>
-    <span v-if="count > 0" class="badge-count">{{ count }} online</span>
+  <div v-show="false">
+    <!-- PollServer — declarative config, resets on slide change -->
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { usePolls } from '../setup/polls'
+import { onMounted, ref, watch } from "vue"
+import { useNav } from "@slidev/client"
+import {
+  ensurePresenterWs,
+  polls,
+  sendToServer,
+  connected,
+} from "../setup/polls"
 
-const { connected, totalAudience: count } = usePolls()
+const props = defineProps({
+  /** Enable presenter mode (connects WS as presenter) */
+  presenter: { type: Boolean, default: false },
+  /** Presenter authentication token */
+  token: { type: String, default: "changeme" },
+  /** Array of poll definitions */
+  polls: {
+    type: Array,
+    default: () => [],
+  },
+})
 
-const status = computed(() => connected.value ? 'on' : 'off')
-const statusLabel = computed(() => connected.value ? 'connected' : 'offline')
+const { currentPage: slideNo } = useNav()
+
+// Track which polls belong to which slides
+const pollsBySlide: Record<number, string[]> = {}
+props.polls.forEach((p: any) => {
+  const si = p.slideIndex ?? -1
+  if (!pollsBySlide[si]) pollsBySlide[si] = []
+  pollsBySlide[si].push(p.id)
+})
+
+function getActivePollIdForSlide(slideNo: number): string | undefined {
+  const ids = pollsBySlide[slideNo]
+  if (!ids?.length) return undefined
+  return ids[0]
+}
+
+// Define all polls on mount (presenter side)
+onMounted(() => {
+  if (props.presenter && props.polls.length) {
+    ensurePresenterWs(props.token, props.polls)
+  }
+})
+
+// Announce slide navigation to server
+let lastNav = -1
+const stop = () => {
+  if (slideNo.value === lastNav) return
+  lastNav = slideNo.value
+  const pollId = getActivePollIdForSlide(slideNo.value)
+  sendToServer({
+    type: "presenter_navigate",
+    slideIndex: slideNo.value,
+    activePollId: pollId,
+  })
+}
+watch(slideNo, stop)
+onMounted(stop)
 </script>
-
-<style scoped>
-.poll-server-badge { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: #8fa4b6; }
-.badge-dot { width: 8px; height: 8px; border-radius: 50%; }
-.badge-dot.on { background: #22c55e; box-shadow: 0 0 4px #22c55e; }
-.badge-dot.off { background: #f1563f; }
-.badge-count { font-weight: 700; color: #c29a5b; }
-</style>

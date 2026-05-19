@@ -8,7 +8,8 @@
   },
   "dependencies": {
     "@slidev/cli": "^52.15.2",
+    "@slidev/theme-default": "^0.25.0",
     "slidev-addon-polls": "file:..",
-    "slidev-theme-jyu": "file:../../jyu-slidev-theme"
+    "slidev-theme-jyu": "github:dezhidki/jyu-slidev-theme#main"
   }
 }

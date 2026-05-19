@@ -1,113 +1,148 @@
 /**
- * usePolls — Composable for Slidev poll WebSocket
- * Real-time state for presenter + audience view
+ * Poll State Module — module-level singleton for Slidev poll system
+ *
+ * Architecture:
+ * - WebSocket connection lives at module level (survives component mount/unmount)
+ * - Shared reactive refs are module-level
+ * - PollServer.vue is just a declarative config wrapper (presenter side)
+ * - PollPresenter.vue reads from module-level state directly
+ * - PollAudience.vue creates its own independent WS (audience side)
  */
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref } from "vue"
 
-const VOTE_URL = typeof window !== 'undefined'
-  ? `${window.location.origin}/vote.html`
-  : 'http://localhost:3030/vote.html'
+// ==================== Shared presenter-side reactive state ===================
+export const connected = ref(false)
+export const polls = ref<any[]>([])
+export const activeBySlide = ref<Record<string, string>>({})
+export const audienceCount = ref(0)
 
-export function usePolls(options = {}) {
-  const { token = '', slides = [], urlPath = '/polls', autoConnect = true } = options
+// ==================== presenter WS (module-level singleton) =================
+let presenterWs: WebSocket | null = null
+let presenterInited = false
+let presenterToken = ""
+let pendingPolls: any[] = []
 
-  let ws = null
-  const connected = ref(false)
-  const totalAudience = ref(0)
-  const error = ref(null)
+function onPresenterMsg(evt: MessageEvent) {
+  try {
+    const msg = JSON.parse(evt.data as string)
+    handlePresenterMsg(msg)
+  } catch {}
+}
 
-  // Normalized poll state
-  const polls = ref([])
-  const currentId = ref(null)
-
-  // Is this the presenter view?
-  const isPresenter = typeof window !== 'undefined' && window.location.pathname.includes('/presenter')
-
-  const activePoll = computed(() => polls.value.find(p => p.id === currentId.value) || null)
-  const activeVotes = computed(() => activePoll.value?.votes || [])
-  const activeTotal = computed(() => activeVotes.value.reduce((a, b) => a + (b || 0), 0))
-
-  function getPct(i) {
-    if (!activeTotal.value) return 0
-    return Math.round((activeVotes.value[i] || 0) / activeTotal.value * 100)
-  }
-
-  function isLeading(i) {
-    if (!activeVotes.value.length) return false
-    const max = Math.max(...activeVotes.value)
-    return max > 0 && activeVotes.value[i] === max
-  }
-
-  // WebSocket helpers
-  function send(msg) {
-    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
-  }
-
-  function connect() {
-    if (!autoConnect) return
-    error.value = null
-    const url = `${location.protocol === 'https:' ? 'wss://' : 'ws://'}${location.host}${urlPath}`
-
-    try { ws = new WebSocket(url) } catch (e) { ws = null; error.value = e.message; return }
-
-    ws.onopen = () => {
-      if (isPresenter && token) {
-        ws.send(JSON.stringify({ type: 'presenter_connect', token }))
-      } else {
-        ws.send(JSON.stringify({ type: 'audience_join' }))
+function handlePresenterMsg(msg: any) {
+  switch (msg.type) {
+    case "presenter_authenticated":
+      polls.value = msg.polls || []
+      if (msg.activePolls) activeBySlide.value = { ...msg.activePolls }
+      connected.value = true
+      // Send pending poll definitions after auth completes
+      if (presenterWs && pendingPolls.length) {
+        presenterWs.send(
+          JSON.stringify({
+            type: "polls_define",
+            polls: pendingPolls.map((p: any) => ({
+              ...p,
+              votes: new Array((p.options || []).length).fill(0),
+              state: "idle",
+              revealed: false,
+            })),
+          }),
+        )
+        pendingPolls = []
       }
-      // Upsert all slide-defined polls
-      if (isPresenter && slides.length) {
-        setTimeout(() => slides.forEach(p => send({ type: 'upsert_poll', poll: p })), 300)
-      }
+      break
+
+    case "poll_state":
+      polls.value = msg.polls || []
+      if (msg.activePolls) activeBySlide.value = { ...msg.activePolls }
+      connected.value = true
+      break
+
+    case "slide_change":
+      polls.value = msg.polls || []
+      if (msg.activePolls) activeBySlide.value = { ...msg.activePolls }
+      connected.value = true
+      break
+
+    case "audience_state":
+      audienceCount.value = msg.audienceCount || 0
+      break
+  }
+}
+
+/**
+ * Initialize presenter WebSocket connection (singleton).
+ * Safe to call multiple times — only connects once.
+ */
+export function ensurePresenterWs(token: string, pollsToDefine: any[] = []) {
+  presenterToken = token
+  pendingPolls = pollsToDefine
+
+  if (presenterInited) {
+    // Already connected — send polls immediately if socket is open
+    if (presenterWs?.readyState === WebSocket.OPEN && pendingPolls.length) {
+      presenterWs.send(
+        JSON.stringify({
+          type: "polls_define",
+          polls: pendingPolls.map((p: any) => ({
+            ...p,
+            votes: new Array((p.options || []).length).fill(0),
+            state: "idle",
+            revealed: false,
+          })),
+        }),
+      )
+      pendingPolls = []
     }
-
-    ws.onmessage = (evt) => {
-      const msg = JSON.parse(evt.data)
-      if (msg.type === 'presenter_authenticated') connected.value = true
-      if (msg.type === 'audience_welcomed') connected.value = true
-      if (msg.type === 'poll_state') {
-        connected.value = true
-        polls.value = msg.polls || []
-        if (!currentId.value && polls.value.length) currentId.value = polls.value[0].id
-      }
-      if (msg.type === 'audience_state') {
-        polls.value = msg.polls || []
-        totalAudience.value = msg.audienceCount || 0
-      }
-    }
-
-    ws.onclose = () => { connected.value = false; setTimeout(connect, 3000) }
-    ws.onerror = () => { ws?.close() }
+    return
   }
+  presenterInited = true
+  connectPresenter()
+}
 
-  // Presenter actions
-  function selectPoll(id) { currentId.value = id }
-  function toggleVoting() {
-    if (!activePoll.value) return
-    const isOpen = activePoll.value.state === 'voting'
-    send({ type: isOpen ? 'close_poll' : 'start_poll', pollId: activePoll.value.id })
-  }
-  function revealAnswer() {
-    if (activePoll.value?.type === 'quiz')
-      send({ type: 'reveal_answer', pollId: activePoll.value.id })
-  }
-  function resetPolls() {
-    send({ type: 'reset_polls' })
-    currentId.value = null
-  }
+function connectPresenter() {
+  const safeToken = presenterToken || "changeme"
+  const proto = typeof location !== "undefined" && location.protocol === "https:" ? "wss:" : "ws:"
+  const host = typeof location !== "undefined" ? location.host : "localhost:3031"
+  presenterWs = new WebSocket(`${proto}//${host}/polls`)
 
-  onMounted(() => connect())
-  onUnmounted(() => { if (ws) { ws.close(); ws = null } })
-
-  return {
-    connected, totalAudience, error,
-    polls, currentId, activePoll,
-    allPolls: polls,
-    activeVotes, activeTotal,
-    isPresenter,
-    getPct, isLeading,
-    selectPoll, toggleVoting, revealAnswer, resetPolls,
-    voteUrl: VOTE_URL,
+  presenterWs.onopen = () => {
+    presenterWs!.send(JSON.stringify({ type: "presenter_connect", token: safeToken }))
   }
+  presenterWs.onmessage = onPresenterMsg
+  presenterWs.onclose = () => {
+    connected.value = false
+    setTimeout(connectPresenter, 3000)
+  }
+}
+
+/**
+ * Send a message through the presenter WS.
+ */
+export function sendToServer(msg: any) {
+  if (presenterWs?.readyState === WebSocket.OPEN) {
+    presenterWs.send(typeof msg === "string" ? msg : JSON.stringify(msg))
+  } else {
+    console.warn("[polls] presenter WS not ready, dropping:", msg.type)
+  }
+}
+
+// ==================== audience WS (per-viewer) ===================
+
+export function createAudienceWs(onMsg: (msg: any) => void): WebSocket {
+  const proto = typeof location !== "undefined" && location.protocol === "https:" ? "wss:" : "ws:"
+  const host = typeof location !== "undefined" ? location.host : "localhost:3031"
+  const ws = new WebSocket(`${proto}//${host}/polls`)
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: "audience_join" }))
+  }
+  ws.onmessage = (evt) => {
+    try { onMsg(JSON.parse(evt.data)) } catch {}
+  }
+  ws.onclose = () => {
+    // Auto-reconnect with backoff
+    setTimeout(() => createAudienceWs(onMsg), 3000)
+  }
+  return ws
 }
