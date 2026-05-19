@@ -1,0 +1,6 @@
+node_modules/
+package-lock.json
+demo/node_modules/
+*.local
+.DS_Store
+public/qr-*.png
