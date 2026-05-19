@@ -2,12 +2,15 @@
  * Poll Server — WebSocket backend for live polls
  * Supports per-slide polls with slide-change sync
  */
+const http = require("http");
 const { WebSocketServer, WebSocket } = require("ws");
 
 const PORT = parseInt(process.env.PORT || "3031");
 const PRESENTER_TOKEN = process.env.PRESENTER_TOKEN || "changeme";
 
-const wss = new WebSocketServer({ port: PORT });
+const server = http.createServer();
+const wss = new WebSocketServer({ server });
+
 let presenterWs = null;
 const audienceSockets = new Set();
 let allPolls = [];
@@ -16,6 +19,10 @@ let activePolls = {};
 
 console.log(`[poll-server] Starting on port ${PORT}`);
 console.log(`[poll-server] Presenter token: ${PRESENTER_TOKEN}`);
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`[poll-server] Listening on ws://0.0.0.0:${PORT}/polls`);
+});
 
 wss.on("connection", (ws, req) => {
   const ip = req.socket.remoteAddress;
@@ -185,5 +192,3 @@ function broadcast(msg) {
     if (c.readyState === WebSocket.OPEN) c.send(str);
   }
 }
-
-console.log(`[poll-server] Listening on ws://0.0.0.0:${PORT}/polls`);
