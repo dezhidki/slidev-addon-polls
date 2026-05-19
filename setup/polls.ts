@@ -103,6 +103,7 @@ export function usePolls(options = {}) {
   return {
     connected, totalAudience, error,
     polls, currentId, activePoll,
+    allPolls: polls,
     activeVotes, activeTotal,
     isPresenter,
     getPct, isLeading,
