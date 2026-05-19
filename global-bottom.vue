@@ -3,7 +3,7 @@
   <div style="display:none" />
 
   <!-- Floating QR badge — shown only in presenter mode when qrUrl is set -->
-  <Teleport v-if="isPresenter && qrUrl" to="body">
+  <Teleport v-if="!isPresenter && qrUrl" to="body">
     <div class="poll-qr-float" :class="{ minimized: minimized }">
       <button class="qr-toggle" @click="minimized = !minimized" :title="minimized ? 'Show QR' : 'Minimize'">
         {{ minimized ? '📱' : '✕' }}

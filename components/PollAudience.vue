@@ -35,7 +35,6 @@
             leading: isLead(i) && totalVotes > 0,
             correct: showReveal && active.correctAnswer === i,
           }"
-          @click="castVote(i)"
         >
           <div class="opt-label">
             <span class="opt-text">{{ optText(opt) }}</span>
@@ -213,8 +212,8 @@ onUnmounted(() => {
 
 /* Options — clickable for audience */
 .options { display: flex; flex-direction: column; gap: 0.45rem; }
-.opt-row { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; border-radius: 6px; padding: 0.2rem 0.3rem; transition: background 0.15s; }
-.opt-row:hover { background: rgba(194,154,91,0.08); }
+.opt-row { display: flex; align-items: center; gap: 0.6rem; cursor: default; border-radius: 6px; padding: 0.2rem 0.3rem; }
+
 .opt-label { flex: 0 0 140px; font-size: 0.88rem; color: #d2d0cc; display: flex; align-items: center; gap: 0.3rem; }
 .opt-row.leading .opt-label { color: #e8c87a; font-weight: 700; }
 .opt-row.correct .opt-label { color: #92e0a8; font-weight: 700; }
