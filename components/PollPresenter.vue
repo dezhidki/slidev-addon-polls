@@ -55,7 +55,6 @@
             leading: isLead(i) && totalVotes > 0,
             correct: quizRevealed && active.correctAnswer === i,
           }"
-          @click="castVote(i)"
         >
           <div class="opt-label">
             <span class="opt-text">{{ optText(opt) }}</span>
@@ -105,16 +104,17 @@
 <script setup lang="ts">
 import { useNav } from "@slidev/client";
 import { computed } from "vue";
-import { activeBySlide, polls, sendToServer } from "../setup/polls";
+import { activeBySlide, audienceCount, connected, polls, sendToServer } from "../setup/polls";
+import type { Poll, PollOption } from "../types";
 
 // Only render in presenter mode
-const _isPresenter = computed(() => {
+const isPresenter = computed(() => {
   if (typeof window === "undefined") return false;
   return window.location.pathname.includes("/presenter");
 });
 
-// Props
-const _props = defineProps({ token: { type: String, default: "changeme" } });
+// Props (token not used here — presenter auth is handled by global-bottom.vue)
+defineProps({ token: { type: String, default: "changeme" } });
 
 // Current slide from router
 const { currentPage: currentSlide } = useNav();
@@ -132,65 +132,65 @@ const activeId = computed(() => {
   if (mapped) return mapped;
   return slidePolls.value[0]?.id ?? null;
 });
-const active = computed(() => {
+const active = computed<Poll | null>(() => {
   if (!activeId.value) return null;
   return polls.value.find((p) => p.id === activeId.value) ?? null;
 });
 
 // Derived state
 const isVoting = computed(() => active.value?.state === "voting");
-const _isQuiz = computed(() => active.value?.type === "quiz");
-const _quizRevealed = computed(() => active.value?.revealed);
+const isQuiz = computed(() => active.value?.type === "quiz");
+const quizRevealed = computed(() => active.value?.revealed === true);
 const votesArr = computed(() => active.value?.votes ?? []);
 const totalVotes = computed(() => votesArr.value.reduce((a, b) => a + b, 0));
-const _activeQuestion = computed(() => active.value?.question ?? "Select a poll");
+const activeQuestion = computed(() => active.value?.question ?? "Select a poll");
+const stateLabel = computed(() => {
+  const s = active.value?.state;
+  if (s === "voting") return "Voting";
+  if (s === "closed") return "Closed";
+  return "Idle";
+});
 
 // Word cloud data
 const wcWords = computed(() => {
   if (!active.value) return [];
-  const wc = active.value.wordCounts || {};
+  const wc = active.value.wordCounts ?? {};
   return Object.entries(wc)
-    .map(([word, count]) => ({ word, count: count as number }))
+    .map(([word, count]) => ({ word, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 30);
 });
-const wcMax = computed(() => {
-  let m = 1;
-  wcWords.value.forEach((w: any) => {
-    if (w.count > m) m = w.count;
-  });
-  return m;
-});
+const wcMax = computed(() => Math.max(...wcWords.value.map((w) => w.count), 1));
 
-// Helpers
-function _pctOf(i: number) {
-  return totalVotes.value ? Math.round(((votesArr.value[i] || 0) / totalVotes.value) * 100) : 0;
+// Helpers — all used in template
+function pctOf(i: number): number {
+  return totalVotes.value ? Math.round(((votesArr.value[i] ?? 0) / totalVotes.value) * 100) : 0;
 }
-function _isLead(i: number) {
+function isLead(i: number): boolean {
   if (!votesArr.value.length) return false;
   const mx = Math.max(...votesArr.value);
   return mx > 0 && votesArr.value[i] === mx;
 }
-function optText(opt: any) {
-  return typeof opt === "string" ? opt : (opt.text ?? opt);
+function optText(opt: PollOption): string {
+  return typeof opt === "string" ? opt : opt.text;
 }
-function tabIcon(p: any) {
+function tabIcon(p: Poll): string {
   if (p.type === "quiz") return "🎯";
   if (p.type === "wordcloud") return "☁️";
   return "☑️";
 }
-function tabState(p: any) {
+function tabState(p: Poll): string {
   if (p.state === "voting") return "Voting";
   if (p.state === "closed") return "Closed";
   return "Idle";
 }
-function tabTrunc(s: string, n: number) {
+function tabTrunc(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n)}…` : s;
 }
-function wcSz(c: number) {
+function wcSz(c: number): number {
   return 14 + (c / wcMax.value) * 28;
 }
-function wcOp(c: number) {
+function wcOp(c: number): number {
   return 0.4 + (c / wcMax.value) * 0.6;
 }
 
@@ -199,41 +199,37 @@ function selectPoll(id: string) {
   activeBySlide.value[String(currentSlide.value)] = id;
   sendToServer({ type: "poll_selected", slideIndex: currentSlide.value, pollId: id });
 }
-function _nextPoll() {
+function nextPoll() {
   const list = slidePolls.value;
   if (!list.length) return;
   const ci = activeId.value ? list.findIndex((p) => p.id === activeId.value) : -1;
   selectPoll(list[(ci + 1) % list.length].id);
 }
-function _prevPoll() {
+function prevPoll() {
   const list = slidePolls.value;
   if (!list.length) return;
   const ci = activeId.value ? list.findIndex((p) => p.id === activeId.value) : -1;
   selectPoll(list[(ci - 1 + list.length) % list.length].id);
 }
-function _toggleVote() {
+function toggleVote() {
   if (!activeId.value) return;
   sendToServer({
     type: isVoting.value ? "poll_stop" : "poll_start",
     pollId: activeId.value,
   });
 }
-function _doReveal() {
+function doReveal() {
   if (!activeId.value) return;
   sendToServer({ type: "poll_reveal", pollId: activeId.value });
 }
-function _resetPoll() {
+function resetPoll() {
   if (!activeId.value) return;
   sendToServer({ type: "poll_reset", pollId: activeId.value });
-  selectPoll(slidePolls.value[0]?.id ?? "");
+  const firstId = slidePolls.value[0]?.id;
+  if (firstId) selectPoll(firstId);
 }
-function _castVote(i: number) {
-  if (!activeId.value) return;
-  sendToServer({ type: "audience_vote", pollId: activeId.value, optionIndex: i });
-}
-
-// (nav sync is handled by global-bottom.vue which persists across slides)
 </script>
+
 <style scoped>
 .poll-presenter-root {
   font-family: 'Lato', -apple-system, BlinkMacSystemFont, sans-serif;

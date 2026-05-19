@@ -69,106 +69,99 @@
 import { useNav } from "@slidev/client";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { createAudienceWs } from "../setup/polls";
+import type { ActivePollMap, Poll, PollOption, ServerMessage } from "../types";
 
-// Hide in presenter mode — PollPresenter handles that view
-const _isPresenter = computed(() => {
+const isPresenter = computed(() => {
   if (typeof window === "undefined") return false;
   return window.location.pathname.includes("/presenter");
 });
 
 const { currentPage: currentSlide } = useNav();
 
-// Audience-reactive state (local + from WS)
-const polls = ref<any[]>([]);
-const activeBySlide = ref<Record<string, string>>({});
+const localPolls = ref<Poll[]>([]);
+const activeBySlide = ref<ActivePollMap>({});
 const localAudience = ref(0);
 const connected = ref(false);
 let audienceWs: WebSocket | null = null;
 
-// Active poll for this viewer's current slide
-const active = computed(() => {
-  const ps = polls.value.filter((p: any) => Number(p.slideIndex) === currentSlide.value);
+const active = computed<Poll | null>(() => {
+  const ps = localPolls.value.filter((p) => Number(p.slideIndex) === currentSlide.value);
   if (!ps.length) return null;
   const aid = activeBySlide.value[String(currentSlide.value)];
   if (aid) {
-    const found = ps.find((p: any) => p.id === aid);
+    const found = ps.find((p) => p.id === aid);
     if (found) return found;
   }
-  return ps[0];
+  return ps[0] ?? null;
 });
 
-const _activeQuestion = computed(() => active.value?.question ?? "Waiting…");
+const activeQuestion = computed(() => active.value?.question ?? "Waiting…");
 const votes = computed(() => active.value?.votes ?? []);
-const totalVotes = computed(() => votes.value.reduce((a: number, b: number) => a + b, 0));
-const _showReveal = computed(() => active.value?.type === "quiz" && active.value?.revealed);
+const totalVotes = computed(() => votes.value.reduce((a, b) => a + b, 0));
+const showReveal = computed(() => active.value?.type === "quiz" && active.value?.revealed === true);
 
-// Word cloud
 const wcWords = computed(() => {
   if (!active.value) return [];
-  const wc = active.value.wordCounts || {};
+  const wc = active.value.wordCounts ?? {};
   return Object.entries(wc)
-    .map(([word, count]) => ({ word, count: count as number }))
-    .sort((a: any, b: any) => b.count - a.count)
+    .map(([word, count]) => ({ word, count }))
+    .sort((a, b) => b.count - a.count)
     .slice(0, 30);
 });
-const wcMax = computed(() => {
-  let m = 1;
-  wcWords.value.forEach((w: any) => {
-    if (w.count > m) m = w.count;
-  });
-  return m;
-});
+const wcMax = computed(() => Math.max(...wcWords.value.map((w) => w.count), 1));
 
-function _pct(i: number) {
-  return totalVotes.value ? Math.round(((votes.value[i] || 0) / totalVotes.value) * 100) : 0;
+function pct(i: number): number {
+  return totalVotes.value ? Math.round(((votes.value[i] ?? 0) / totalVotes.value) * 100) : 0;
 }
-function _isLead(i: number) {
+function isLead(i: number): boolean {
   if (!votes.value.length) return false;
   const mx = Math.max(...votes.value);
   return mx > 0 && votes.value[i] === mx;
 }
-function optText(opt: any) {
-  return typeof opt === "string" ? opt : (opt.text ?? opt);
+function optText(opt: PollOption): string {
+  return typeof opt === "string" ? opt : opt.text;
 }
-function wcSz(c: number) {
+function wcSz(c: number): number {
   return 14 + (c / wcMax.value) * 28;
 }
-function wcOp(c: number) {
+function wcOp(c: number): number {
   return 0.4 + (c / wcMax.value) * 0.6;
 }
 
-// Handle messages from server
-function handleMsg(msg: any) {
+function handleMsg(msg: ServerMessage) {
   switch (msg.type) {
     case "audience_welcomed":
     case "poll_state":
-      polls.value = msg.polls ?? [];
-      if (msg.activePolls) activeBySlide.value = { ...msg.activePolls };
+      localPolls.value = msg.polls;
+      activeBySlide.value = { ...msg.activePolls };
       connected.value = true;
       break;
     case "slide_change":
-      polls.value = msg.polls ?? [];
-      if (msg.activePolls) activeBySlide.value = { ...msg.activePolls };
+      localPolls.value = msg.polls;
+      activeBySlide.value = { ...msg.activePolls };
       connected.value = true;
       break;
     case "audience_state":
-      localAudience.value = msg.audienceCount ?? 0;
+      localAudience.value = msg.audienceCount;
+      break;
+    case "presenter_authenticated":
+      // Not expected on audience socket but handled gracefully
       break;
   }
 }
 
-// Lifecycle
 onMounted(() => {
   audienceWs = createAudienceWs(handleMsg);
 });
 onUnmounted(() => {
   if (audienceWs) {
-    audienceWs.onclose = null; // prevent auto-reconnect
+    audienceWs.onclose = null;
     audienceWs.close();
     audienceWs = null;
   }
 });
 </script>
+
 <style scoped>
 .poll-audience-root {
   font-family: 'Lato', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -206,7 +199,7 @@ onUnmounted(() => {
 .cloud-wrap { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.4rem 0.7rem; padding: 0.4rem; }
 .cloud-word { font-weight: 600; color: #c29a5b; text-shadow: 0 0 10px rgba(194,154,91,0.3); transition: font-size 0.4s ease; user-select: none; }
 
-/* Options — clickable for audience */
+/* Options */
 .options { display: flex; flex-direction: column; gap: 0.45rem; }
 .opt-row { display: flex; align-items: center; gap: 0.6rem; cursor: default; border-radius: 6px; padding: 0.2rem 0.3rem; }
 

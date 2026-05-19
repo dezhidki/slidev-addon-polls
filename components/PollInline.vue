@@ -31,12 +31,16 @@
           <span v-if="type === 'quiz' && revealed && i === correctAnswer" class="chip-correct">✓ Correct</span>
         </div>
         <div class="opt-bar-wrap">
-          <div class="opt-bar" :style="{ width: total ? pct(i) + '%' : '0%' }" :class="{
-            'bar-leading': isLeading(i) && total > 0,
-            'bar-correct': type === 'quiz' && revealed && i === correctAnswer
-          }" />
+          <div
+            class="opt-bar"
+            :style="{ width: total ? pct(i) + '%' : '0%' }"
+            :class="{
+              'bar-leading': isLeading(i) && total > 0,
+              'bar-correct': type === 'quiz' && revealed && i === correctAnswer
+            }"
+          />
         </div>
-        <div class="opt-num">{{ votes[i] || 0 }} · {{ total ? pct(i) : 0 }}%</div>
+        <div class="opt-num">{{ votes?.[i] || 0 }} · {{ total ? pct(i) : 0 }}%</div>
       </div>
     </div>
   </div>
@@ -44,35 +48,43 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import type { PollOption, PollType } from "../types";
 
 const props = defineProps<{
   question: string;
-  type?: "choice" | "quiz" | "wordcloud";
-  options?: Array<string | { text: string }>;
+  type?: PollType;
+  options?: PollOption[];
   votes?: number[];
   wordCounts?: Record<string, number>;
   correctAnswer?: number;
   revealed?: boolean;
 }>();
 
-const _type = computed(() => props.type || "choice");
-const total = computed(() => (props.votes || []).reduce((a, b) => a + b, 0) || 0);
-const _pct = (i: number) =>
-  total.value ? Math.round(((props.votes[i] || 0) / total.value) * 100) : 0;
-const _isLeading = (i: number) => {
-  const max = Math.max(...(props.votes || []), 0);
-  return max > 0 && props.votes[i] === max;
-};
+const total = computed(() => (props.votes ?? []).reduce((a, b) => a + b, 0));
 
-const sortedWords = computed(() => {
-  return Object.entries(props.wordCounts || {})
+function pct(i: number): number {
+  return total.value ? Math.round(((props.votes?.[i] ?? 0) / total.value) * 100) : 0;
+}
+function isLeading(i: number): boolean {
+  const vs = props.votes ?? [];
+  const max = Math.max(...vs, 0);
+  return max > 0 && vs[i] === max;
+}
+
+const sortedWords = computed(() =>
+  Object.entries(props.wordCounts ?? {})
     .map(([word, count]) => ({ word, count }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 20);
-});
+    .slice(0, 20),
+);
 const maxCount = computed(() => Math.max(...sortedWords.value.map((w) => w.count), 1));
-const _wcSize = (c: number) => 12 + (c / maxCount.value) * 26;
-const _wcOp = (c: number) => 0.35 + (c / maxCount.value) * 0.65;
+
+function wcSize(c: number): number {
+  return 12 + (c / maxCount.value) * 26;
+}
+function wcOp(c: number): number {
+  return 0.35 + (c / maxCount.value) * 0.65;
+}
 </script>
 
 <style scoped>

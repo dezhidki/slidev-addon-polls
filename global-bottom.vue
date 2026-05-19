@@ -2,7 +2,7 @@
   <!-- Invisible persistent component — survives slide navigation -->
   <div style="display:none" />
 
-  <!-- Floating QR badge — shown only in presenter mode when qrUrl is set -->
+  <!-- Floating QR badge — shown only in audience mode when qrUrl is set -->
   <Teleport v-if="!isPresenter && qrUrl" to="body">
     <div class="poll-qr-float" :class="{ minimized: minimized }">
       <button class="qr-toggle" @click="minimized = !minimized" :title="minimized ? 'Show QR' : 'Minimize'">
@@ -24,15 +24,17 @@ import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { slides } from "#slidev/slides";
 import { globalPollConfig } from "./setup/globalConfig";
 import { ensurePresenterWs, sendToServer } from "./setup/polls";
+import type { Poll } from "./types";
 
 const { currentPage: slideNo, isPresenter } = useNav();
 const minimized = ref(false);
 const qrCanvas = ref<HTMLCanvasElement | null>(null);
 
 const qrUrl = computed(() => globalPollConfig.value?.qrUrl ?? "");
-const _shortUrl = computed(() => {
+const shortUrl = computed(() => {
   try {
-    return new URL(qrUrl.value).host + new URL(qrUrl.value).pathname;
+    const u = new URL(qrUrl.value);
+    return u.host + u.pathname;
   } catch {
     return qrUrl.value;
   }
@@ -61,20 +63,32 @@ watch([qrUrl, minimized], async ([url, min]) => {
 
 /** Bootstrap from headmatter if PollServer hasn't run yet */
 function bootstrapFromHeadmatter() {
-  if (globalPollConfig.value) return; // already set by PollServer
-  const headmatter = slides.value?.[0]?.meta?.slide?.frontmatter?.polls ?? null;
+  if (globalPollConfig.value) return;
+  // Headmatter is untyped YAML — cast through unknown
+  const frontmatter = slides.value?.[0]?.meta?.slide?.frontmatter as
+    | Record<string, unknown>
+    | undefined;
+  const headmatter = frontmatter?.polls as Record<string, unknown> | null | undefined;
   if (!headmatter) return;
-  const rawPolls: any[] = headmatter.questions ?? [];
-  const token: string = headmatter.token ?? "changeme";
-  const qrUrl: string = headmatter.qrUrl ?? "";
+
+  const rawPolls = (headmatter.questions as Poll[] | undefined) ?? [];
+  const token = (headmatter.token as string | undefined) ?? "changeme";
+  const rawQrUrl = (headmatter.qrUrl as string | undefined) ?? "";
+
   if (!rawPolls.length) return;
+
   const pollsBySlide: Record<number, string[]> = {};
-  rawPolls.forEach((p: any) => {
+  for (const p of rawPolls) {
     const si = Number(p.slideIndex ?? -1);
     if (!pollsBySlide[si]) pollsBySlide[si] = [];
     pollsBySlide[si].push(p.id);
-  });
-  globalPollConfig.value = { token, polls: rawPolls, pollsBySlide, qrUrl: qrUrl || undefined };
+  }
+  globalPollConfig.value = {
+    token,
+    polls: rawPolls,
+    pollsBySlide,
+    qrUrl: rawQrUrl || undefined,
+  };
 }
 
 function announce() {

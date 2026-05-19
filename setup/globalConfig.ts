@@ -1,8 +1,9 @@
 import { ref } from "vue";
+import type { ActivePollMap, Poll } from "../types";
 
 export interface PollConfig {
   token: string;
-  polls: any[];
+  polls: Poll[];
   pollsBySlide: Record<number, string[]>;
   qrUrl?: string;
 }
