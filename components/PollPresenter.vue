@@ -96,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { usePolls } from '../setup/polls'
+import { usePolls } from 'slidev-addon-polls';
 import { computed } from 'vue'
 
 const props = defineProps<{

@@ -7,9 +7,9 @@
 </template>
 
 <script setup lang="ts">
-import { usePolls } from '../index.ts'
+import { usePolls } from 'slidev-addon-polls';
 
-const { connected, totalAudience: count } = usePolls()
+const { connected, totalAudience: count } = usePolls();
 
 const status = connected.value ? 'on' : 'off'
 const statusLabel = connected.value ? 'connected' : 'offline'

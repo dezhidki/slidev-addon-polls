@@ -8,6 +8,9 @@
     "url": "https://github.com/dezhidki/slidev-addon-polls.git"
   },
   "keywords": ["slidev", "addon", "poll", "survey", "quiz", "live", "qrcode"],
+  "dependencies": {
+    "ws": "^8.20.1"
+  },
   "engines": {
     "slidev": ">=v0.47.0"
   },

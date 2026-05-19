@@ -8,7 +8,7 @@
 const { WebSocketServer, WebSocket } = require('ws')
 
 const PORT = parseInt(process.argv[2] || process.env.PORT || '3031')
-const PRESENTER_TOKEN = process.argv[3] || process.env.TOKEN || 'changeme'
+const PRESENTER_TOKEN = process.env.TOKEN || 'changeme'
 
 // Minimal hash for obscuring audience WS path per session
 const SESSION_HASH = Math.random().toString(36).slice(2, 8)
