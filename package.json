@@ -1,0 +1,25 @@
+{
+  "name": "slidev-addon-polls",
+  "version": "0.1.0",
+  "description": "Live polling addon for Slidev — choice, quiz, and word cloud polls with QR-code audience join",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dezhidki/slidev-addon-polls.git"
+  },
+  "keywords": ["slidev", "addon", "poll", "survey", "quiz", "live", "qrcode"],
+  "engines": {
+    "slidev": ">=v0.47.0"
+  },
+  "slidev": {
+    "colorSchema": "both",
+    "highlighter": "shiki"
+  },
+  "files": [
+    "components/**/*",
+    "setup/**/*",
+    "public/**/*",
+    "package.json",
+    "README.md"
+  ]
+}

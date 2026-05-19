@@ -1,0 +1,14 @@
+{
+  "name": "slidev-addon-polls-demo",
+  "private": true,
+  "scripts": {
+    "dev": "slidev slides.md --port 3017",
+    "build": "slidev build slides.md",
+    "export": "slidev export slides.md"
+  },
+  "dependencies": {
+    "@slidev/cli": "^52.15.2",
+    "slidev-addon-polls": "file:..",
+    "slidev-theme-jyu": "file:../../jyu-slidev-theme"
+  }
+}
