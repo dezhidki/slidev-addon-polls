@@ -3,7 +3,7 @@
     <div class="poll-header">
       <span class="poll-title">📊 {{ activeQuestion }}</span>
       <div class="poll-meta">
-        <span class="slide-num">Slide {{ currentSlide + 1 }}</span>
+        <span class="slide-num">Slide {{ currentSlide }}</span>
         <span class="poll-count">👥 {{ localAudience }}</span>
         <span class="poll-dot" :class="connected ? 'on' : 'off'" />
       </div>
