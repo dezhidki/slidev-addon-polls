@@ -103,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from "vue"
+import { computed } from "vue"
 import { useNav } from "@slidev/client"
 import {
   connected,
@@ -230,24 +230,7 @@ function castVote(i: number) {
   sendToServer({ type: "audience_vote", pollId: activeId.value, optionIndex: i })
 }
 
-// Announce initial slide position to server on mount
-onMounted(() => {
-  if (props.presenter) {
-    const pollId = getActivePollIdForSlide(currentSlide.value)
-    sendToServer({
-      type: "presenter_navigate",
-      slideIndex: currentSlide.value,
-      activePollId: pollId,
-    })
-  }
-})
-
-function getActivePollIdForSlide(slideNo: number): string | undefined {
-  const ids = Object.entries(polls.value)
-    .filter(([, p]: [any, any]) => Number(p.slideIndex) === slideNo)
-    .map(([id]: [string, any]) => id)
-  return ids[0]
-}
+// (nav sync is handled by global-bottom.vue which persists across slides)
 </script>
 <style scoped>
 .poll-presenter-root {

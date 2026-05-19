@@ -76,6 +76,19 @@ wss.on("connection", (ws, req) => {
         break;
       }
 
+      case "audience_word": {
+        const poll = allPolls.find((p) => p.id === msg.pollId);
+        if (poll && poll.type === "wordcloud" && msg.text) {
+          if (!poll.wordCounts) poll.wordCounts = {};
+          const word = String(msg.text).trim().toLowerCase().slice(0, 32);
+          if (word) {
+            poll.wordCounts[word] = (poll.wordCounts[word] || 0) + 1;
+            syncAll();
+          }
+        }
+        break;
+      }
+
       case "polls_define": {
         allPolls = (msg.polls || []).map((p) => ({
           ...p,
