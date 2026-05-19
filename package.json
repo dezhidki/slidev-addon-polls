@@ -17,6 +17,7 @@
     "qrcode"
   ],
   "dependencies": {
+    "qrcode": "^1.5.4",
     "ws": "^8.20.1"
   },
   "peerDependencies": {
@@ -37,5 +38,8 @@
     "public/**/*",
     "package.json",
     "README.md"
-  ]
+  ],
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6"
+  }
 }

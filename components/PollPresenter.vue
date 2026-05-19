@@ -1,5 +1,5 @@
 <template>
-  <div v-show="hasPolls" class="poll-presenter-root">
+  <div v-if="isPresenter && hasPolls" class="poll-presenter-root">
     <div class="poll-header">
       <span class="poll-title">{{ activeQuestion }}</span>
       <div class="poll-meta">
@@ -112,6 +112,13 @@ import {
   audienceCount,
   sendToServer,
 } from "../setup/polls"
+import { globalPollConfig } from "../setup/globalConfig"
+
+// Only render in presenter mode
+const isPresenter = computed(() => {
+  if (typeof window === "undefined") return false
+  return window.location.pathname.includes("/presenter")
+})
 
 // Props
 const props = defineProps({ token: { type: String, default: "changeme" } })

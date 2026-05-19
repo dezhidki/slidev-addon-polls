@@ -1,5 +1,5 @@
 <template>
-  <div class="poll-audience-root">
+  <div v-if="!isPresenter" class="poll-audience-root">
     <div class="poll-header">
       <span class="poll-title">📊 {{ activeQuestion }}</span>
       <div class="poll-meta">
@@ -70,6 +70,12 @@
 import { ref, computed, onMounted, onUnmounted } from "vue"
 import { useNav } from "@slidev/client"
 import { createAudienceWs } from "../setup/polls"
+
+// Hide in presenter mode — PollPresenter handles that view
+const isPresenter = computed(() => {
+  if (typeof window === "undefined") return false
+  return window.location.pathname.includes("/presenter")
+})
 
 const { currentPage: currentSlide } = useNav()
 

@@ -2,15 +2,15 @@
   <!-- Invisible persistent component — survives slide navigation -->
   <div style="display:none" />
 
-  <!-- Floating QR badge — shown on every slide when qrUrl is set -->
-  <Teleport v-if="qrUrl" to="body">
+  <!-- Floating QR badge — shown only in presenter mode when qrUrl is set -->
+  <Teleport v-if="isPresenter && qrUrl" to="body">
     <div class="poll-qr-float" :class="{ minimized: minimized }">
       <button class="qr-toggle" @click="minimized = !minimized" :title="minimized ? 'Show QR' : 'Minimize'">
         {{ minimized ? '📱' : '✕' }}
       </button>
       <div v-show="!minimized" class="qr-inner">
         <div class="qr-label">Join the poll</div>
-        <img :src="qrImgUrl" alt="Join poll" width="120" height="120" />
+        <canvas ref="qrCanvas" width="120" height="120" class="qr-canvas" />
         <div class="qr-link">{{ shortUrl }}</div>
       </div>
     </div>
@@ -18,14 +18,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from "vue"
+import { ref, computed, watch, onMounted, nextTick } from "vue"
 import { useNav } from "@slidev/client"
 import { slides } from "#slidev/slides"
+import QRCode from "qrcode"
 import { ensurePresenterWs, sendToServer } from "./setup/polls"
 import { globalPollConfig } from "./setup/globalConfig"
 
 const { currentPage: slideNo, isPresenter } = useNav()
 const minimized = ref(false)
+const qrCanvas = ref<HTMLCanvasElement | null>(null)
 
 const qrUrl = computed(() => globalPollConfig.value?.qrUrl ?? "")
 const shortUrl = computed(() => {
@@ -35,10 +37,26 @@ const shortUrl = computed(() => {
     return qrUrl.value
   }
 })
-const qrImgUrl = computed(() => {
-  if (!qrUrl.value) return ""
-  const sz = 120
-  return `https://api.apiqr.cc/qrcode?data=${encodeURIComponent(qrUrl.value)}&size=${sz}x${sz}&color=002957&bgcolor=EDE1CE&ecc=M`
+
+async function renderQR() {
+  if (!qrCanvas.value || !qrUrl.value) return
+  try {
+    await QRCode.toCanvas(qrCanvas.value, qrUrl.value, {
+      width: 120,
+      margin: 2,
+      color: { dark: "#002957", light: "#EDE1CE" },
+      errorCorrectionLevel: "M",
+    })
+  } catch (e) {
+    console.error("[global-bottom] QR render failed:", e)
+  }
+}
+
+watch([qrUrl, minimized], async ([url, min]) => {
+  if (url && !min) {
+    await nextTick()
+    renderQR()
+  }
 })
 
 /** Bootstrap from headmatter if PollServer hasn't run yet */
@@ -75,7 +93,11 @@ function announce() {
 
 watch(slideNo, announce)
 watch(slides, () => { bootstrapFromHeadmatter(); announce() }, { deep: false })
-onMounted(announce)
+onMounted(async () => {
+  announce()
+  await nextTick()
+  renderQR()
+})
 </script>
 
 <style>
@@ -115,7 +137,7 @@ onMounted(announce)
   align-items: center;
   gap: 0.3rem;
 }
-.qr-inner img {
+.qr-canvas {
   border-radius: 6px;
 }
 .qr-label {

@@ -78,6 +78,17 @@ export function ensurePresenterWs(token: string, pollsToDefine: any[] = []) {
   presenterToken = token
   pendingPolls = pollsToDefine
 
+  // Pre-populate polls from headmatter immediately so UI renders before WS auth
+  if (pollsToDefine.length && !polls.value.length) {
+    polls.value = pollsToDefine.map((p: any) => ({
+      ...p,
+      votes: new Array((p.options || []).length).fill(0),
+      state: "idle",
+      revealed: false,
+      wordCounts: {},
+    }))
+  }
+
   if (presenterInited) {
     // Already connected — send polls immediately if socket is open
     if (presenterWs?.readyState === WebSocket.OPEN && pendingPolls.length) {
