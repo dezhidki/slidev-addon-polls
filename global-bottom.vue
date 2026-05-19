@@ -9,7 +9,7 @@
         {{ minimized ? '📱' : '✕' }}
       </button>
       <div v-show="!minimized" class="qr-inner">
-        <div class="qr-label">{{ qrLabel }}</div>
+        <div class="qr-label">Join the poll</div>
         <img :src="qrImgUrl" alt="Join poll" width="120" height="120" />
         <div class="qr-link">{{ shortUrl }}</div>
       </div>
@@ -20,6 +20,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from "vue"
 import { useNav } from "@slidev/client"
+import { slides } from "#slidev/slides"
 import { ensurePresenterWs, sendToServer } from "./setup/polls"
 import { globalPollConfig } from "./setup/globalConfig"
 
@@ -27,7 +28,6 @@ const { currentPage: slideNo, isPresenter } = useNav()
 const minimized = ref(false)
 
 const qrUrl = computed(() => globalPollConfig.value?.qrUrl ?? "")
-const qrLabel = computed(() => "Join the poll")
 const shortUrl = computed(() => {
   try {
     return new URL(qrUrl.value).host + new URL(qrUrl.value).pathname
@@ -41,19 +41,40 @@ const qrImgUrl = computed(() => {
   return `https://api.apiqr.cc/qrcode?data=${encodeURIComponent(qrUrl.value)}&size=${sz}x${sz}&color=002957&bgcolor=EDE1CE&ecc=M`
 })
 
+/** Bootstrap from headmatter if PollServer hasn't run yet */
+function bootstrapFromHeadmatter() {
+  if (globalPollConfig.value) return // already set by PollServer
+  const headmatter = slides.value?.[0]?.meta?.slide?.frontmatter?.polls ?? null
+  if (!headmatter) return
+  const rawPolls: any[] = headmatter.questions ?? []
+  const token: string = headmatter.token ?? "changeme"
+  const qrUrl: string = headmatter.qrUrl ?? ""
+  if (!rawPolls.length) return
+  const pollsBySlide: Record<number, string[]> = {}
+  rawPolls.forEach((p: any) => {
+    const si = Number(p.slideIndex ?? -1)
+    if (!pollsBySlide[si]) pollsBySlide[si] = []
+    pollsBySlide[si].push(p.id)
+  })
+  globalPollConfig.value = { token, polls: rawPolls, pollsBySlide, qrUrl: qrUrl || undefined }
+}
+
 function announce() {
-  if (!isPresenter.value) return
+  bootstrapFromHeadmatter()
   const cfg = globalPollConfig.value
   if (!cfg) return
-  ensurePresenterWs(cfg.token, cfg.polls)
-  sendToServer({
-    type: "presenter_navigate",
-    slideIndex: slideNo.value,
-    activePollId: cfg.pollsBySlide?.[slideNo.value]?.[0],
-  })
+  if (isPresenter.value) {
+    ensurePresenterWs(cfg.token, cfg.polls)
+    sendToServer({
+      type: "presenter_navigate",
+      slideIndex: slideNo.value,
+      activePollId: cfg.pollsBySlide?.[slideNo.value]?.[0],
+    })
+  }
 }
 
 watch(slideNo, announce)
+watch(slides, () => { bootstrapFromHeadmatter(); announce() }, { deep: false })
 onMounted(announce)
 </script>
 
