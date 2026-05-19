@@ -1,7 +1,7 @@
 ---
-theme: ../../jyu-slidev-theme
+theme: slidev-theme-jyu
 addons:
-  - ..
+  - slidev-addon-polls
 title: "Slidev Polls Demo"
 download: false
 ---
