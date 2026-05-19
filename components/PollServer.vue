@@ -7,12 +7,13 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { usePolls } from '../setup/polls'
 
 const { connected, totalAudience: count } = usePolls()
 
-const status = connected.value ? 'on' : 'off'
-const statusLabel = connected.value ? 'connected' : 'offline'
+const status = computed(() => connected.value ? 'on' : 'off')
+const statusLabel = computed(() => connected.value ? 'connected' : 'offline')
 </script>
 
 <style scoped>
