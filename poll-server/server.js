@@ -147,6 +147,7 @@ wss.on("connection", (ws, req) => {
               slideIndex: currentSlide,
               activePollId: activePolls[currentSlide],
               activePolls,
+              polls: allPolls,
             }));
           }
         }
@@ -169,6 +170,7 @@ wss.on("connection", (ws, req) => {
             slideIndex: currentSlide,
             activePollId: activePolls[currentSlide],
             activePolls,
+            polls: allPolls,
           }));
         }
         break;
