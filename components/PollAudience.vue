@@ -168,3 +168,63 @@ onUnmounted(() => {
   }
 })
 </script>
+<style scoped>
+.poll-audience-root {
+  font-family: 'Lato', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: rgba(0, 29, 61, 0.95);
+  border-radius: 12px;
+  color: #e2e0dc;
+  border: 1px solid rgba(194, 154, 91, 0.25);
+  overflow: hidden;
+  max-width: 700px;
+  margin: 0 auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+
+.poll-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.7rem 1.1rem;
+  background: rgba(194, 154, 91, 0.12);
+  border-bottom: 1px solid rgba(194, 154, 91, 0.18);
+  font-size: 0.92rem; font-weight: 700;
+}
+.poll-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; color: #f8f6f0; }
+.poll-meta { display: flex; align-items: center; gap: 0.6rem; }
+.slide-num { font-size: 0.75rem; color: #a8bdd0; }
+.poll-count { font-size: 0.82rem; color: #a8bdd0; font-weight: 400; }
+.poll-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.poll-dot.on { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+.poll-dot.off { background: #f1563f; }
+
+.poll-offline { padding: 0.6rem 1rem; font-size: 0.82rem; color: #e8c87a; background: rgba(232, 200, 122, 0.08); }
+
+.poll-body { padding: 0.9rem 1.1rem; }
+
+/* Word cloud */
+.wc-area { min-height: 60px; }
+.cloud-wrap { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.4rem 0.7rem; padding: 0.4rem; }
+.cloud-word { font-weight: 600; color: #c29a5b; text-shadow: 0 0 10px rgba(194,154,91,0.3); transition: font-size 0.4s ease; user-select: none; }
+
+/* Options — clickable for audience */
+.options { display: flex; flex-direction: column; gap: 0.45rem; }
+.opt-row { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; border-radius: 6px; padding: 0.2rem 0.3rem; transition: background 0.15s; }
+.opt-row:hover { background: rgba(194,154,91,0.08); }
+.opt-label { flex: 0 0 140px; font-size: 0.88rem; color: #d2d0cc; display: flex; align-items: center; gap: 0.3rem; }
+.opt-row.leading .opt-label { color: #e8c87a; font-weight: 700; }
+.opt-row.correct .opt-label { color: #92e0a8; font-weight: 700; }
+.opt-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.correct-chip { font-size: 0.65rem; background: #166534; color: #92e0a8; padding: 0.1rem 0.35rem; border-radius: 4px; font-weight: 700; flex-shrink: 0; }
+
+.opt-bar-wrap { flex: 1; height: 22px; background: rgba(15,25,35,0.6); border-radius: 5px; overflow: hidden; }
+.opt-bar { height: 100%; background: linear-gradient(90deg, #c29a5b, #d4b47a); border-radius: 5px; transition: width 0.5s ease; min-width: 0; }
+.opt-bar.bar-leading { background: linear-gradient(90deg, #e8c87a, #f0ddb0); }
+.opt-bar.bar-correct { background: linear-gradient(90deg, #22c55e, #16a34a) !important; }
+.opt-bar.bar-empty { background: transparent; }
+
+.opt-stat { display: flex; gap: 0.3rem; min-width: 60px; justify-content: flex-end; }
+.stat-count { font-weight: 700; font-size: 0.85rem; color: #f8f6f0; }
+.stat-pct { font-size: 0.78rem; color: #c29a5b; }
+
+.empty { text-align: center; color: #6b7f97; font-size: 0.85rem; padding: 1rem; }
+.empty-state { padding: 1.5rem; text-align: center; color: #6b7f97; font-size: 0.9rem; }
+</style>
