@@ -7,5 +7,5 @@ export default function setupShiki() {
       light: "vitesse-light",
     },
     defaultColor: false,
-  }
+  };
 }

@@ -103,138 +103,133 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue"
-import { useNav } from "@slidev/client"
-import {
-  connected,
-  polls,
-  activeBySlide,
-  audienceCount,
-  sendToServer,
-} from "../setup/polls"
-import { globalPollConfig } from "../setup/globalConfig"
+import { useNav } from "@slidev/client";
+import { computed } from "vue";
+import { activeBySlide, polls, sendToServer } from "../setup/polls";
 
 // Only render in presenter mode
-const isPresenter = computed(() => {
-  if (typeof window === "undefined") return false
-  return window.location.pathname.includes("/presenter")
-})
+const _isPresenter = computed(() => {
+  if (typeof window === "undefined") return false;
+  return window.location.pathname.includes("/presenter");
+});
 
 // Props
-const props = defineProps({ token: { type: String, default: "changeme" } })
+const _props = defineProps({ token: { type: String, default: "changeme" } });
 
 // Current slide from router
-const { currentPage: currentSlide } = useNav()
+const { currentPage: currentSlide } = useNav();
 
 // Polls belonging to current slide
 const slidePolls = computed(() =>
   polls.value.filter((p) => Number(p.slideIndex) === currentSlide.value),
-)
-const hasPolls = computed(() => slidePolls.value.length > 0)
+);
+const hasPolls = computed(() => slidePolls.value.length > 0);
 
 // Active poll: use activeBySlide mapping or fall back to first
 const activeId = computed(() => {
-  if (!hasPolls.value) return null
-  const mapped = activeBySlide.value[String(currentSlide.value)]
-  if (mapped) return mapped
-  return slidePolls.value[0]?.id ?? null
-})
+  if (!hasPolls.value) return null;
+  const mapped = activeBySlide.value[String(currentSlide.value)];
+  if (mapped) return mapped;
+  return slidePolls.value[0]?.id ?? null;
+});
 const active = computed(() => {
-  if (!activeId.value) return null
-  return polls.value.find((p) => p.id === activeId.value) ?? null
-})
+  if (!activeId.value) return null;
+  return polls.value.find((p) => p.id === activeId.value) ?? null;
+});
 
 // Derived state
-const isVoting = computed(() => active.value?.state === "voting")
-const isQuiz = computed(() => active.value?.type === "quiz")
-const quizRevealed = computed(() => active.value?.revealed)
-const votesArr = computed(() => active.value?.votes ?? [])
-const totalVotes = computed(() => votesArr.value.reduce((a, b) => a + b, 0))
-const activeQuestion = computed(() => active.value?.question ?? "Select a poll")
+const isVoting = computed(() => active.value?.state === "voting");
+const _isQuiz = computed(() => active.value?.type === "quiz");
+const _quizRevealed = computed(() => active.value?.revealed);
+const votesArr = computed(() => active.value?.votes ?? []);
+const totalVotes = computed(() => votesArr.value.reduce((a, b) => a + b, 0));
+const _activeQuestion = computed(() => active.value?.question ?? "Select a poll");
 
 // Word cloud data
 const wcWords = computed(() => {
-  if (!active.value) return []
-  const wc = active.value.wordCounts || {}
+  if (!active.value) return [];
+  const wc = active.value.wordCounts || {};
   return Object.entries(wc)
     .map(([word, count]) => ({ word, count: count as number }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 30)
-})
+    .slice(0, 30);
+});
 const wcMax = computed(() => {
-  let m = 1
-  wcWords.value.forEach((w: any) => { if (w.count > m) m = w.count })
-  return m
-})
+  let m = 1;
+  wcWords.value.forEach((w: any) => {
+    if (w.count > m) m = w.count;
+  });
+  return m;
+});
 
 // Helpers
-function pctOf(i: number) {
-  return totalVotes.value ? Math.round(((votesArr.value[i] || 0) / totalVotes.value) * 100) : 0
+function _pctOf(i: number) {
+  return totalVotes.value ? Math.round(((votesArr.value[i] || 0) / totalVotes.value) * 100) : 0;
 }
-function isLead(i: number) {
-  if (!votesArr.value.length) return false
-  const mx = Math.max(...votesArr.value)
-  return mx > 0 && votesArr.value[i] === mx
+function _isLead(i: number) {
+  if (!votesArr.value.length) return false;
+  const mx = Math.max(...votesArr.value);
+  return mx > 0 && votesArr.value[i] === mx;
 }
 function optText(opt: any) {
-  return typeof opt === "string" ? opt : opt.text ?? opt
+  return typeof opt === "string" ? opt : (opt.text ?? opt);
 }
 function tabIcon(p: any) {
-  if (p.type === "quiz") return "🎯"
-  if (p.type === "wordcloud") return "☁️"
-  return "☑️"
+  if (p.type === "quiz") return "🎯";
+  if (p.type === "wordcloud") return "☁️";
+  return "☑️";
 }
 function tabState(p: any) {
-  if (p.state === "voting") return "Voting"
-  if (p.state === "closed") return "Closed"
-  return "Idle"
+  if (p.state === "voting") return "Voting";
+  if (p.state === "closed") return "Closed";
+  return "Idle";
 }
 function tabTrunc(s: string, n: number) {
-  return s.length > n ? s.slice(0, n) + "…" : s
+  return s.length > n ? `${s.slice(0, n)}…` : s;
 }
 function wcSz(c: number) {
-  return 14 + (c / wcMax.value) * 28
+  return 14 + (c / wcMax.value) * 28;
 }
 function wcOp(c: number) {
-  return 0.4 + (c / wcMax.value) * 0.6
+  return 0.4 + (c / wcMax.value) * 0.6;
 }
 
 // Actions
 function selectPoll(id: string) {
-  activeBySlide.value[String(currentSlide.value)] = id
-  sendToServer({ type: "poll_selected", slideIndex: currentSlide.value, pollId: id })
+  activeBySlide.value[String(currentSlide.value)] = id;
+  sendToServer({ type: "poll_selected", slideIndex: currentSlide.value, pollId: id });
 }
-function nextPoll() {
-  const list = slidePolls.value
-  if (!list.length) return
-  const ci = activeId.value ? list.findIndex((p) => p.id === activeId.value) : -1
-  selectPoll(list[(ci + 1) % list.length].id)
+function _nextPoll() {
+  const list = slidePolls.value;
+  if (!list.length) return;
+  const ci = activeId.value ? list.findIndex((p) => p.id === activeId.value) : -1;
+  selectPoll(list[(ci + 1) % list.length].id);
 }
-function prevPoll() {
-  const list = slidePolls.value
-  if (!list.length) return
-  const ci = activeId.value ? list.findIndex((p) => p.id === activeId.value) : -1
-  selectPoll(list[(ci - 1 + list.length) % list.length].id)
+function _prevPoll() {
+  const list = slidePolls.value;
+  if (!list.length) return;
+  const ci = activeId.value ? list.findIndex((p) => p.id === activeId.value) : -1;
+  selectPoll(list[(ci - 1 + list.length) % list.length].id);
 }
-function toggleVote() {
-  if (!activeId.value) return
+function _toggleVote() {
+  if (!activeId.value) return;
   sendToServer({
     type: isVoting.value ? "poll_stop" : "poll_start",
     pollId: activeId.value,
-  })
+  });
 }
-function doReveal() {
-  if (!activeId.value) return
-  sendToServer({ type: "poll_reveal", pollId: activeId.value })
+function _doReveal() {
+  if (!activeId.value) return;
+  sendToServer({ type: "poll_reveal", pollId: activeId.value });
 }
-function resetPoll() {
-  if (!activeId.value) return
-  sendToServer({ type: "poll_reset", pollId: activeId.value })
-  selectPoll(slidePolls.value[0]?.id ?? "")
+function _resetPoll() {
+  if (!activeId.value) return;
+  sendToServer({ type: "poll_reset", pollId: activeId.value });
+  selectPoll(slidePolls.value[0]?.id ?? "");
 }
-function castVote(i: number) {
-  if (!activeId.value) return
-  sendToServer({ type: "audience_vote", pollId: activeId.value, optionIndex: i })
+function _castVote(i: number) {
+  if (!activeId.value) return;
+  sendToServer({ type: "audience_vote", pollId: activeId.value, optionIndex: i });
 }
 
 // (nav sync is handled by global-bottom.vue which persists across slides)

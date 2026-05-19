@@ -43,35 +43,36 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed } from "vue";
 
 const props = defineProps<{
-  question: string
-  type?: 'choice' | 'quiz' | 'wordcloud'
-  options?: Array<string | { text: string }>
-  votes?: number[]
-  wordCounts?: Record<string, number>
-  correctAnswer?: number
-  revealed?: boolean
-}>()
+  question: string;
+  type?: "choice" | "quiz" | "wordcloud";
+  options?: Array<string | { text: string }>;
+  votes?: number[];
+  wordCounts?: Record<string, number>;
+  correctAnswer?: number;
+  revealed?: boolean;
+}>();
 
-const type = computed(() => props.type || 'choice')
-const total = computed(() => (props.votes || []).reduce((a, b) => a + b, 0) || 0)
-const pct = (i: number) => total.value ? Math.round((props.votes[i] || 0) / total.value * 100) : 0
-const isLeading = (i: number) => {
-  const max = Math.max(...(props.votes || []), 0)
-  return max > 0 && props.votes[i] === max
-}
+const _type = computed(() => props.type || "choice");
+const total = computed(() => (props.votes || []).reduce((a, b) => a + b, 0) || 0);
+const _pct = (i: number) =>
+  total.value ? Math.round(((props.votes[i] || 0) / total.value) * 100) : 0;
+const _isLeading = (i: number) => {
+  const max = Math.max(...(props.votes || []), 0);
+  return max > 0 && props.votes[i] === max;
+};
 
 const sortedWords = computed(() => {
   return Object.entries(props.wordCounts || {})
     .map(([word, count]) => ({ word, count }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 20)
-})
-const maxCount = computed(() => Math.max(...sortedWords.value.map(w => w.count), 1))
-const wcSize = (c: number) => 12 + (c / maxCount.value) * 26
-const wcOp = (c: number) => 0.35 + (c / maxCount.value) * 0.65
+    .slice(0, 20);
+});
+const maxCount = computed(() => Math.max(...sortedWords.value.map((w) => w.count), 1));
+const _wcSize = (c: number) => 12 + (c / maxCount.value) * 26;
+const _wcOp = (c: number) => 0.35 + (c / maxCount.value) * 0.65;
 </script>
 
 <style scoped>

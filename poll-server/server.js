@@ -2,10 +2,10 @@
  * Poll Server — WebSocket backend for live polls
  * Supports per-slide polls with slide-change sync
  */
-const http = require("http");
+const http = require("node:http");
 const { WebSocketServer, WebSocket } = require("ws");
 
-const PORT = parseInt(process.env.PORT || "3031");
+const PORT = parseInt(process.env.PORT || "3031", 10);
 const PRESENTER_TOKEN = process.env.PRESENTER_TOKEN || "changeme";
 
 const server = http.createServer();
@@ -15,7 +15,7 @@ let presenterWs = null;
 const audienceSockets = new Set();
 let allPolls = [];
 let currentSlide = 0;
-let activePolls = {};
+const activePolls = {};
 
 console.log(`[poll-server] Starting on port ${PORT}`);
 console.log(`[poll-server] Presenter token: ${PRESENTER_TOKEN}`);
@@ -30,7 +30,11 @@ wss.on("connection", (ws, req) => {
 
   ws.on("message", (raw) => {
     let msg;
-    try { msg = JSON.parse(raw.toString()); } catch { return; }
+    try {
+      msg = JSON.parse(raw.toString());
+    } catch {
+      return;
+    }
 
     switch (msg.type) {
       case "presenter_connect": {
@@ -38,12 +42,14 @@ wss.on("connection", (ws, req) => {
           presenterWs = ws;
           ws.isPresenter = true;
           console.log(`[poll-server] Presenter authenticated from ${ip}`);
-          ws.send(JSON.stringify({
-            type: "presenter_authenticated",
-            polls: allPolls,
-            currentSlide,
-            activePolls,
-          }));
+          ws.send(
+            JSON.stringify({
+              type: "presenter_authenticated",
+              polls: allPolls,
+              currentSlide,
+              activePolls,
+            }),
+          );
         } else {
           console.log(`[poll-server] Invalid presenter token from ${ip}`);
           ws.send(JSON.stringify({ type: "auth_failed", reason: "Invalid token" }));
@@ -56,12 +62,14 @@ wss.on("connection", (ws, req) => {
         ws.isPresenter = false;
         audienceSockets.add(ws);
         console.log(`[poll-server] Audience joined (${audienceSockets.size} total)`);
-        ws.send(JSON.stringify({
-          type: "audience_welcomed",
-          polls: allPolls,
-          currentSlide,
-          activePolls,
-        }));
+        ws.send(
+          JSON.stringify({
+            type: "audience_welcomed",
+            polls: allPolls,
+            currentSlide,
+            activePolls,
+          }),
+        );
         broadcast({ type: "audience_state", audienceCount: audienceSockets.size });
         break;
       }
@@ -103,13 +111,19 @@ wss.on("connection", (ws, req) => {
 
       case "poll_start": {
         const poll = allPolls.find((p) => p.id === msg.pollId);
-        if (poll) { poll.state = "voting"; syncAll(); }
+        if (poll) {
+          poll.state = "voting";
+          syncAll();
+        }
         break;
       }
 
       case "poll_stop": {
         const poll = allPolls.find((p) => p.id === msg.pollId);
-        if (poll) { poll.state = "closed"; syncAll(); }
+        if (poll) {
+          poll.state = "closed";
+          syncAll();
+        }
         break;
       }
 
@@ -126,7 +140,10 @@ wss.on("connection", (ws, req) => {
 
       case "poll_reveal": {
         const poll = allPolls.find((p) => p.id === msg.pollId);
-        if (poll) { poll.revealed = true; syncAll(); }
+        if (poll) {
+          poll.revealed = true;
+          syncAll();
+        }
         break;
       }
 
@@ -142,13 +159,15 @@ wss.on("connection", (ws, req) => {
           });
           broadcast(payload);
           if (presenterWs && presenterWs.readyState === WebSocket.OPEN) {
-            presenterWs.send(JSON.stringify({
-              type: "slide_change",
-              slideIndex: currentSlide,
-              activePollId: activePolls[currentSlide],
-              activePolls,
-              polls: allPolls,
-            }));
+            presenterWs.send(
+              JSON.stringify({
+                type: "slide_change",
+                slideIndex: currentSlide,
+                activePollId: activePolls[currentSlide],
+                activePolls,
+                polls: allPolls,
+              }),
+            );
           }
         }
         break;
@@ -165,13 +184,15 @@ wss.on("connection", (ws, req) => {
         });
         broadcast(payload);
         if (presenterWs && presenterWs.readyState === WebSocket.OPEN) {
-          presenterWs.send(JSON.stringify({
-            type: "slide_change",
-            slideIndex: currentSlide,
-            activePollId: activePolls[currentSlide],
-            activePolls,
-            polls: allPolls,
-          }));
+          presenterWs.send(
+            JSON.stringify({
+              type: "slide_change",
+              slideIndex: currentSlide,
+              activePollId: activePolls[currentSlide],
+              activePolls,
+              polls: allPolls,
+            }),
+          );
         }
         break;
       }

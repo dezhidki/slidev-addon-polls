@@ -16,6 +16,11 @@
     "live",
     "qrcode"
   ],
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write ."
+  },
   "dependencies": {
     "qrcode": "^1.5.4",
     "ws": "^8.20.1"
@@ -40,6 +45,7 @@
     "README.md"
   ],
   "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
     "@types/qrcode": "^1.5.6"
   }
 }

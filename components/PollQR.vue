@@ -7,37 +7,37 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
-import QRCode from 'qrcode'
+import QRCode from "qrcode";
+import { computed, onMounted, ref, watch } from "vue";
 
 const props = defineProps<{
-  url: string
-  label?: string
-  size?: 'compact' | 'normal' | 'large'
-  showLink?: boolean
-}>()
+  url: string;
+  label?: string;
+  size?: "compact" | "normal" | "large";
+  showLink?: boolean;
+}>();
 
-const QR_SIZES = { compact: 160, normal: 220, large: 300 }
-const qrSize = computed(() => QR_SIZES[props.size || 'normal'] || 220)
-const canvasRef = ref<HTMLCanvasElement | null>(null)
+const QR_SIZES = { compact: 160, normal: 220, large: 300 };
+const qrSize = computed(() => QR_SIZES[props.size || "normal"] || 220);
+const canvasRef = ref<HTMLCanvasElement | null>(null);
 
 async function renderQR() {
-  if (!canvasRef.value || !props.url) return
+  if (!canvasRef.value || !props.url) return;
   try {
     await QRCode.toCanvas(canvasRef.value, props.url, {
       width: qrSize.value,
       margin: 2,
-      color: { dark: '#002957', light: '#EDE1CE' },
-      errorCorrectionLevel: 'M',
-    })
+      color: { dark: "#002957", light: "#EDE1CE" },
+      errorCorrectionLevel: "M",
+    });
   } catch (e) {
-    console.error('[PollQR] Failed to render QR:', e)
+    console.error("[PollQR] Failed to render QR:", e);
   }
 }
 
-onMounted(renderQR)
-watch(() => props.url, renderQR)
-watch(qrSize, renderQR)
+onMounted(renderQR);
+watch(() => props.url, renderQR);
+watch(qrSize, renderQR);
 </script>
 
 <style scoped>

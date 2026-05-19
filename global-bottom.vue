@@ -18,86 +18,93 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick } from "vue"
-import { useNav } from "@slidev/client"
-import { slides } from "#slidev/slides"
-import QRCode from "qrcode"
-import { ensurePresenterWs, sendToServer } from "./setup/polls"
-import { globalPollConfig } from "./setup/globalConfig"
+import { useNav } from "@slidev/client";
+import QRCode from "qrcode";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { slides } from "#slidev/slides";
+import { globalPollConfig } from "./setup/globalConfig";
+import { ensurePresenterWs, sendToServer } from "./setup/polls";
 
-const { currentPage: slideNo, isPresenter } = useNav()
-const minimized = ref(false)
-const qrCanvas = ref<HTMLCanvasElement | null>(null)
+const { currentPage: slideNo, isPresenter } = useNav();
+const minimized = ref(false);
+const qrCanvas = ref<HTMLCanvasElement | null>(null);
 
-const qrUrl = computed(() => globalPollConfig.value?.qrUrl ?? "")
-const shortUrl = computed(() => {
+const qrUrl = computed(() => globalPollConfig.value?.qrUrl ?? "");
+const _shortUrl = computed(() => {
   try {
-    return new URL(qrUrl.value).host + new URL(qrUrl.value).pathname
+    return new URL(qrUrl.value).host + new URL(qrUrl.value).pathname;
   } catch {
-    return qrUrl.value
+    return qrUrl.value;
   }
-})
+});
 
 async function renderQR() {
-  if (!qrCanvas.value || !qrUrl.value) return
+  if (!qrCanvas.value || !qrUrl.value) return;
   try {
     await QRCode.toCanvas(qrCanvas.value, qrUrl.value, {
       width: 120,
       margin: 2,
       color: { dark: "#002957", light: "#EDE1CE" },
       errorCorrectionLevel: "M",
-    })
+    });
   } catch (e) {
-    console.error("[global-bottom] QR render failed:", e)
+    console.error("[global-bottom] QR render failed:", e);
   }
 }
 
 watch([qrUrl, minimized], async ([url, min]) => {
   if (url && !min) {
-    await nextTick()
-    renderQR()
+    await nextTick();
+    renderQR();
   }
-})
+});
 
 /** Bootstrap from headmatter if PollServer hasn't run yet */
 function bootstrapFromHeadmatter() {
-  if (globalPollConfig.value) return // already set by PollServer
-  const headmatter = slides.value?.[0]?.meta?.slide?.frontmatter?.polls ?? null
-  if (!headmatter) return
-  const rawPolls: any[] = headmatter.questions ?? []
-  const token: string = headmatter.token ?? "changeme"
-  const qrUrl: string = headmatter.qrUrl ?? ""
-  if (!rawPolls.length) return
-  const pollsBySlide: Record<number, string[]> = {}
+  if (globalPollConfig.value) return; // already set by PollServer
+  const headmatter = slides.value?.[0]?.meta?.slide?.frontmatter?.polls ?? null;
+  if (!headmatter) return;
+  const rawPolls: any[] = headmatter.questions ?? [];
+  const token: string = headmatter.token ?? "changeme";
+  const qrUrl: string = headmatter.qrUrl ?? "";
+  if (!rawPolls.length) return;
+  const pollsBySlide: Record<number, string[]> = {};
   rawPolls.forEach((p: any) => {
-    const si = Number(p.slideIndex ?? -1)
-    if (!pollsBySlide[si]) pollsBySlide[si] = []
-    pollsBySlide[si].push(p.id)
-  })
-  globalPollConfig.value = { token, polls: rawPolls, pollsBySlide, qrUrl: qrUrl || undefined }
+    const si = Number(p.slideIndex ?? -1);
+    if (!pollsBySlide[si]) pollsBySlide[si] = [];
+    pollsBySlide[si].push(p.id);
+  });
+  globalPollConfig.value = { token, polls: rawPolls, pollsBySlide, qrUrl: qrUrl || undefined };
 }
 
 function announce() {
-  bootstrapFromHeadmatter()
-  const cfg = globalPollConfig.value
-  if (!cfg) return
+  bootstrapFromHeadmatter();
+  const cfg = globalPollConfig.value;
+  if (!cfg) return;
   if (isPresenter.value) {
-    ensurePresenterWs(cfg.token, cfg.polls)
+    ensurePresenterWs(cfg.token, cfg.polls);
     sendToServer({
       type: "presenter_navigate",
       slideIndex: slideNo.value,
       activePollId: cfg.pollsBySlide?.[slideNo.value]?.[0],
-    })
+    });
   }
 }
 
-watch(slideNo, announce)
-watch(slides, () => { bootstrapFromHeadmatter(); announce() }, { deep: false })
+watch(slideNo, announce);
+watch(
+  slides,
+  () => {
+    bootstrapFromHeadmatter();
+    announce();
+  },
+  { deep: false },
+);
 onMounted(async () => {
-  announce()
-  await nextTick()
-  renderQR()
-})
+  announce();
+  await nextTick();
+  renderQR();
+});
 </script>
 
 <style>

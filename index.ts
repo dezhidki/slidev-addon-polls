@@ -21,4 +21,4 @@
  * - PollQR      — scannable QR code for audience to join
  */
 
-export {}
+export {};

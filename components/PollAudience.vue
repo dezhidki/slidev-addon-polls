@@ -66,79 +66,75 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue"
-import { useNav } from "@slidev/client"
-import { createAudienceWs } from "../setup/polls"
+import { useNav } from "@slidev/client";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { createAudienceWs } from "../setup/polls";
 
 // Hide in presenter mode — PollPresenter handles that view
-const isPresenter = computed(() => {
-  if (typeof window === "undefined") return false
-  return window.location.pathname.includes("/presenter")
-})
+const _isPresenter = computed(() => {
+  if (typeof window === "undefined") return false;
+  return window.location.pathname.includes("/presenter");
+});
 
-const { currentPage: currentSlide } = useNav()
+const { currentPage: currentSlide } = useNav();
 
 // Audience-reactive state (local + from WS)
-const polls = ref<any[]>([])
-const activeBySlide = ref<Record<string, string>>({})
-const localAudience = ref(0)
-const connected = ref(false)
-let audienceWs: WebSocket | null = null
+const polls = ref<any[]>([]);
+const activeBySlide = ref<Record<string, string>>({});
+const localAudience = ref(0);
+const connected = ref(false);
+let audienceWs: WebSocket | null = null;
 
 // Active poll for this viewer's current slide
 const active = computed(() => {
-  const ps = polls.value.filter((p: any) => Number(p.slideIndex) === currentSlide.value)
-  if (!ps.length) return null
-  const aid = activeBySlide.value[String(currentSlide.value)]
+  const ps = polls.value.filter((p: any) => Number(p.slideIndex) === currentSlide.value);
+  if (!ps.length) return null;
+  const aid = activeBySlide.value[String(currentSlide.value)];
   if (aid) {
-    const found = ps.find((p: any) => p.id === aid)
-    if (found) return found
+    const found = ps.find((p: any) => p.id === aid);
+    if (found) return found;
   }
-  return ps[0]
-})
+  return ps[0];
+});
 
-const activeQuestion = computed(() => active.value?.question ?? "Waiting…")
-const votes = computed(() => active.value?.votes ?? [])
-const totalVotes = computed(() => votes.value.reduce((a: number, b: number) => a + b, 0))
-const showReveal = computed(() => active.value?.type === "quiz" && active.value?.revealed)
+const _activeQuestion = computed(() => active.value?.question ?? "Waiting…");
+const votes = computed(() => active.value?.votes ?? []);
+const totalVotes = computed(() => votes.value.reduce((a: number, b: number) => a + b, 0));
+const _showReveal = computed(() => active.value?.type === "quiz" && active.value?.revealed);
 
 // Word cloud
 const wcWords = computed(() => {
-  if (!active.value) return []
-  const wc = active.value.wordCounts || {}
+  if (!active.value) return [];
+  const wc = active.value.wordCounts || {};
   return Object.entries(wc)
     .map(([word, count]) => ({ word, count: count as number }))
     .sort((a: any, b: any) => b.count - a.count)
-    .slice(0, 30)
-})
+    .slice(0, 30);
+});
 const wcMax = computed(() => {
-  let m = 1
-  wcWords.value.forEach((w: any) => { if (w.count > m) m = w.count })
-  return m
-})
+  let m = 1;
+  wcWords.value.forEach((w: any) => {
+    if (w.count > m) m = w.count;
+  });
+  return m;
+});
 
-function pct(i: number) {
-  return totalVotes.value ? Math.round(((votes.value[i] || 0) / totalVotes.value) * 100) : 0
+function _pct(i: number) {
+  return totalVotes.value ? Math.round(((votes.value[i] || 0) / totalVotes.value) * 100) : 0;
 }
-function isLead(i: number) {
-  if (!votes.value.length) return false
-  const mx = Math.max(...votes.value)
-  return mx > 0 && votes.value[i] === mx
+function _isLead(i: number) {
+  if (!votes.value.length) return false;
+  const mx = Math.max(...votes.value);
+  return mx > 0 && votes.value[i] === mx;
 }
 function optText(opt: any) {
-  return typeof opt === "string" ? opt : opt.text ?? opt
+  return typeof opt === "string" ? opt : (opt.text ?? opt);
 }
-function wcSz(c: number) { return 14 + (c / wcMax.value) * 28 }
-function wcOp(c: number) { return 0.4 + (c / wcMax.value) * 0.6 }
-
-// Cast vote via WebSocket
-function castVote(i: number) {
-  if (!active.value || audienceWs?.readyState !== WebSocket.OPEN) return
-  audienceWs.send(JSON.stringify({
-    type: "audience_vote",
-    pollId: active.value.id,
-    optionIndex: i,
-  }))
+function wcSz(c: number) {
+  return 14 + (c / wcMax.value) * 28;
+}
+function wcOp(c: number) {
+  return 0.4 + (c / wcMax.value) * 0.6;
 }
 
 // Handle messages from server
@@ -146,32 +142,32 @@ function handleMsg(msg: any) {
   switch (msg.type) {
     case "audience_welcomed":
     case "poll_state":
-      polls.value = msg.polls ?? []
-      if (msg.activePolls) activeBySlide.value = { ...msg.activePolls }
-      connected.value = true
-      break
+      polls.value = msg.polls ?? [];
+      if (msg.activePolls) activeBySlide.value = { ...msg.activePolls };
+      connected.value = true;
+      break;
     case "slide_change":
-      polls.value = msg.polls ?? []
-      if (msg.activePolls) activeBySlide.value = { ...msg.activePolls }
-      connected.value = true
-      break
+      polls.value = msg.polls ?? [];
+      if (msg.activePolls) activeBySlide.value = { ...msg.activePolls };
+      connected.value = true;
+      break;
     case "audience_state":
-      localAudience.value = msg.audienceCount ?? 0
-      break
+      localAudience.value = msg.audienceCount ?? 0;
+      break;
   }
 }
 
 // Lifecycle
 onMounted(() => {
-  audienceWs = createAudienceWs(handleMsg)
-})
+  audienceWs = createAudienceWs(handleMsg);
+});
 onUnmounted(() => {
   if (audienceWs) {
-    audienceWs.onclose = null // prevent auto-reconnect
-    audienceWs.close()
-    audienceWs = null
+    audienceWs.onclose = null; // prevent auto-reconnect
+    audienceWs.close();
+    audienceWs = null;
   }
-})
+});
 </script>
 <style scoped>
 .poll-audience-root {
