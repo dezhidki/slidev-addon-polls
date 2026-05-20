@@ -5,6 +5,7 @@ addons:
 title: "Slidev Polls Demo"
 download: false
 favicon: https://jyu-polls.dezhidki-hermes.party/jyu-logo-cover.svg
+pollQr: "https://jyu-polls.dezhidki-hermes.party/vote.html"
 ---
 
 # Slidev Poll Addon
@@ -12,8 +13,6 @@ favicon: https://jyu-polls.dezhidki-hermes.party/jyu-logo-cover.svg
 Real-time audience polling for Slidev presentations.
 
 🗳️ **Choice Polls** · 🎯 **Quizzes** · ☁️ **Word Clouds** · 📱 **QR Code Join**
-
-<PollQR url="https://polls.dezhidki-hermes.party/vote.html" size="large" />
 
 ---
 
@@ -23,41 +22,36 @@ Real-time audience polling for Slidev presentations.
    ```bash
    node poll-server/server.js 3031 your-secret-token
    ```
-2. **Add components to your slides**
-   - `<PollServer>` — configures polls + connects as presenter
-   - `<PollPresenter>` — shows controls, tabs, voting bars
-   - `<PollAudience>` — shows live results for audience
-   - `<PollQR>` — scannable QR code for joining
+2. **Add `<Poll>` to any slide**
+   ```vue
+   <Poll :questions="[
+     { type: 'choice', question: 'Which?', options: ['A', 'B'] },
+     { type: 'quiz', question: 'What is CSS?', options: [...], correctAnswer: 1 },
+     { type: 'wordcloud', question: 'One word:' },
+   ]" />
+   ```
 3. **Share the vote page** at `/vote.html`
 
 ---
 
 # Choice Poll 🗳️
 
-Demonstrates multiple polls on one slide with tab switching.
+Multiple polls on one slide — switch between them with tabs.
 
-<PollServer presenter token="changeme" :polls="[
-  { id: 'paradigm', question: 'Which programming paradigm do you prefer?', type: 'choice', options: ['Object-Oriented', 'Functional', 'Procedural', 'Declarative'], slideIndex: 2 },
-  { id: 'language', question: 'What is your favorite language?', type: 'choice', options: ['Python', 'TypeScript', 'Rust', 'Haskell'], slideIndex: 2 },
-]"/>
-
-<PollPresenter />
-
-<PollAudience />
+<Poll :questions="[
+  { type: 'choice', question: 'Which programming paradigm do you prefer?', options: ['Object-Oriented', 'Functional', 'Procedural', 'Declarative'] },
+  { type: 'choice', question: 'What is your favorite language?', options: ['Python', 'TypeScript', 'Rust', 'Haskell'] },
+]" />
 
 ---
 
 # Quiz Time 🎯
 
-A quiz poll with a correct answer. Start the poll, let the audience vote, close it, then reveal!
+Start the poll, let the audience vote, close it, then reveal the answer!
 
-<PollServer presenter token="changeme" :polls="[
-  { id: 'css-quiz', question: 'What does CSS stand for?', type: 'quiz', options: ['Computer Style Sheets', 'Cascading Style Sheets', 'Creative Style System', 'Colorful Style Sheets'], correctAnswer: 1, slideIndex: 3 },
-]"/>
-
-<PollPresenter />
-
-<PollAudience />
+<Poll :questions="[
+  { type: 'quiz', question: 'What does CSS stand for?', options: ['Computer Style Sheets', 'Cascading Style Sheets', 'Creative Style System', 'Colorful Style Sheets'], correctAnswer: 1 },
+]" />
 
 ---
 
@@ -65,21 +59,9 @@ A quiz poll with a correct answer. Start the poll, let the audience vote, close 
 
 Free-form text input — audience types words and they form a live cloud.
 
-<PollServer presenter token="changeme" :polls="[
-  { id: 'describe', question: 'Describe this presentation in one word:', type: 'wordcloud', slideIndex: 4 },
-]"/>
-
-<PollPresenter />
-
-<PollAudience />
-
----
-
-# Join the Poll 📱
-
-Scan the QR code or visit the URL below on your phone to participate:
-
-<PollQR url="https://polls.dezhidki-hermes.party/vote.html" size="normal" />
+<Poll :questions="[
+  { type: 'wordcloud', question: 'Describe this presentation in one word:' },
+]" />
 
 ---
 

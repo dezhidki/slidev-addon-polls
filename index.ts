@@ -3,22 +3,20 @@
  *
  * Usage in slides.md:
  *
- *   <PollServer presenter token="changeme" :polls="[
- *     { id: 'q1', question: 'Which do you prefer?', type: 'choice',
- *       options: ['A', 'B', 'C'], slideIndex: 1 },
- *     { id: 'q2', question: 'Rate this talk', type: 'quiz',
- *       options: ['Good', 'Great', 'Okay'], correctAnswer: 1, slideIndex: 2 }
- *   ]"/>
+ *   <!-- First slide headmatter only (optional — shows a floating QR badge) -->
+ *   ---
+ *   pollQr: "https://your-site/vote.html"
+ *   ---
  *
- *   <PollPresenter />
- *   <PollAudience />
- *   <PollQR url="https://polls.dezhidki-hermes.party/vote.html" />
+ *   <!-- Any slide — declare polls with the single Poll component -->
+ *   <Poll :questions="[
+ *     { type: 'choice',    question: 'Which do you prefer?', options: ['A', 'B', 'C'] },
+ *     { type: 'quiz',      question: 'What is 2+2?', options: ['3','4','5'], correctAnswer: 1 },
+ *     { type: 'wordcloud', question: 'One word to describe this talk:' },
+ *   ]" />
  *
- * Components:
- * - PollServer  — declares polls + connects to WS as presenter (put on slide 0, v-show=false)
- * - PollPresenter — shows controls, tabs, vote bars (presenter view)
- * - PollAudience  — shows live vote bars for audience
- * - PollQR      — scannable QR code for audience to join
+ * The presenter password is read from Slidev's --remote=<password> flag automatically.
+ * No token configuration needed in slides.
  */
 
 export {};
