@@ -23,11 +23,19 @@ export const audienceCount = ref(0);
 const registeredPolls = new Map<string, Poll>();
 
 /**
+ * Reactive ref of locally-registered polls — useful for audience components
+ * to display questions immediately before the WS round-trip completes.
+ */
+export const registeredPollsRef = ref<Poll[]>([]);
+
+/**
  * Register a poll declared by a <Poll> component.
  * Called at component setup time (including during overview where all slides render).
  */
 export function registerPoll(poll: Poll): void {
   registeredPolls.set(poll.id, poll);
+  // Keep reactive ref in sync so audience can read definitions immediately
+  registeredPollsRef.value = getRegisteredPolls();
 }
 
 function getRegisteredPolls(): Poll[] {

@@ -1,6 +1,10 @@
 <template>
-  <PollPresenter v-if="isPresenter" :slide-index="slideIndex" :poll-ids="pollIds" />
-  <PollAudience v-else :slide-index="slideIndex" />
+  <PollDisplay
+    :slide-index="slideIndex"
+    :poll-ids="pollIds"
+    :readonly="!isPresenter"
+    :compact="compact"
+  />
 </template>
 
 <script setup lang="ts">
@@ -8,11 +12,12 @@ import { useNav, useSlideContext } from "@slidev/client";
 import { onMounted } from "vue";
 import { registerPoll } from "../setup/polls";
 import type { RawQuestion } from "../types";
-import PollAudience from "./PollAudience.vue";
-import PollPresenter from "./PollPresenter.vue";
+import PollDisplay from "./PollDisplay.vue";
 
 const props = defineProps({
   questions: { type: Array as () => RawQuestion[], required: true },
+  /** Compact layout — reduces internal padding, use when poll shares a slide with code */
+  compact: { type: Boolean, default: false },
 });
 
 const { $page } = useSlideContext();
