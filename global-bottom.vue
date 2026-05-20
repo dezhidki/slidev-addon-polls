@@ -2,7 +2,7 @@
   <!-- Invisible persistent component — survives slide navigation -->
   <div style="display:none" />
 
-  <!-- Floating QR badge — shown only in audience mode when qrUrl is set -->
+  <!-- Floating QR badge — shown only in audience mode when pollQr is set in headmatter -->
   <Teleport v-if="!isPresenter && qrUrl" to="body">
     <div class="poll-qr-float" :class="{ minimized: minimized }">
       <button class="qr-toggle" @click="minimized = !minimized" :title="minimized ? 'Show QR' : 'Minimize'">
@@ -22,15 +22,18 @@ import { useNav } from "@slidev/client";
 import QRCode from "qrcode";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { slides } from "#slidev/slides";
-import { globalPollConfig } from "./setup/globalConfig";
 import { ensurePresenterWs, sendToServer } from "./setup/polls";
-import type { Poll } from "./types";
 
 const { currentPage: slideNo, isPresenter } = useNav();
 const minimized = ref(false);
 const qrCanvas = ref<HTMLCanvasElement | null>(null);
 
-const qrUrl = computed(() => globalPollConfig.value?.qrUrl ?? "");
+// Read pollQr from the first slide's headmatter — the ONLY config needed in slides
+const qrUrl = computed(() => {
+  const fm = slides.value?.[0]?.meta?.slide?.frontmatter as Record<string, unknown> | undefined;
+  return (fm?.pollQr as string | undefined) ?? "";
+});
+
 const shortUrl = computed(() => {
   try {
     const u = new URL(qrUrl.value);
@@ -61,59 +64,18 @@ watch([qrUrl, minimized], async ([url, min]) => {
   }
 });
 
-/** Bootstrap from headmatter if PollServer hasn't run yet */
-function bootstrapFromHeadmatter() {
-  if (globalPollConfig.value) return;
-  // Headmatter is untyped YAML — cast through unknown
-  const frontmatter = slides.value?.[0]?.meta?.slide?.frontmatter as
-    | Record<string, unknown>
-    | undefined;
-  const headmatter = frontmatter?.polls as Record<string, unknown> | null | undefined;
-  if (!headmatter) return;
-
-  const rawPolls = (headmatter.questions as Poll[] | undefined) ?? [];
-  const token = (headmatter.token as string | undefined) ?? "changeme";
-  const rawQrUrl = (headmatter.qrUrl as string | undefined) ?? "";
-
-  if (!rawPolls.length) return;
-
-  const pollsBySlide: Record<number, string[]> = {};
-  for (const p of rawPolls) {
-    const si = Number(p.slideIndex ?? -1);
-    if (!pollsBySlide[si]) pollsBySlide[si] = [];
-    pollsBySlide[si].push(p.id);
-  }
-  globalPollConfig.value = {
-    token,
-    polls: rawPolls,
-    pollsBySlide,
-    qrUrl: rawQrUrl || undefined,
-  };
-}
-
 function announce() {
-  bootstrapFromHeadmatter();
-  const cfg = globalPollConfig.value;
-  if (!cfg) return;
-  if (isPresenter.value) {
-    ensurePresenterWs(cfg.token, cfg.polls);
-    sendToServer({
-      type: "presenter_navigate",
-      slideIndex: slideNo.value,
-      activePollId: cfg.pollsBySlide?.[slideNo.value]?.[0],
-    });
-  }
+  if (!isPresenter.value) return;
+  ensurePresenterWs();
+  sendToServer({
+    type: "presenter_navigate",
+    slideIndex: slideNo.value,
+  });
 }
 
 watch(slideNo, announce);
-watch(
-  slides,
-  () => {
-    bootstrapFromHeadmatter();
-    announce();
-  },
-  { deep: false },
-);
+watch(slides, announce, { deep: false });
+
 onMounted(async () => {
   announce();
   await nextTick();

@@ -1,12 +1,9 @@
 import { ref } from "vue";
-import type { ActivePollMap, Poll } from "../types";
 
 export interface PollConfig {
-  token: string;
-  polls: Poll[];
-  pollsBySlide: Record<number, string[]>;
+  /** URL to encode in the QR badge shown to the audience */
   qrUrl?: string;
 }
 
-/** Shared config set by <PollServer> and read by the global bottom component */
+/** Set from the first slide's headmatter (pollQr field) */
 export const globalPollConfig = ref<PollConfig | null>(null);

@@ -27,6 +27,19 @@ export interface Poll {
   correctAnswer?: number;
 }
 
+/**
+ * Input shape for <Poll :questions="[...]">.
+ * id and slideIndex are computed automatically — do not set them.
+ */
+export interface RawQuestion {
+  type: PollType;
+  question: string;
+  /** Required for type='choice' and type='quiz' */
+  options?: PollOption[];
+  /** Index into options[] of the correct answer (quiz only) */
+  correctAnswer?: number;
+}
+
 export interface WordEntry {
   word: string;
   count: number;

@@ -1,5 +1,5 @@
 <template>
-  <div v-if="isPresenter && hasPolls" class="poll-presenter-root">
+  <div v-if="hasPolls" class="poll-presenter-root">
     <div class="poll-header">
       <span class="poll-title">{{ activeQuestion }}</span>
       <div class="poll-meta">
@@ -102,35 +102,31 @@
 </template>
 
 <script setup lang="ts">
-import { useNav } from "@slidev/client";
 import { computed } from "vue";
 import { activeBySlide, audienceCount, connected, polls, sendToServer } from "../setup/polls";
 import type { Poll, PollOption } from "../types";
 
-// Only render in presenter mode
-const isPresenter = computed(() => {
-  if (typeof window === "undefined") return false;
-  return window.location.pathname.includes("/presenter");
+const props = defineProps({
+  /** 1-based slide index (passed from Poll.vue via useSlideContext().$page) */
+  slideIndex: { type: Number, required: true },
+  /** Ordered list of poll IDs declared on this slide */
+  pollIds: { type: Array as () => string[], default: () => [] },
 });
 
-// Props (token not used here — presenter auth is handled by global-bottom.vue)
-defineProps({ token: { type: String, default: "changeme" } });
-
-// Current slide from router
-const { currentPage: currentSlide } = useNav();
-
-// Polls belonging to current slide
+// Polls belonging to this slide (from server state, keyed by registered IDs)
 const slidePolls = computed(() =>
-  polls.value.filter((p) => Number(p.slideIndex) === currentSlide.value),
+  polls.value.filter((p) => Number(p.slideIndex) === props.slideIndex),
 );
 const hasPolls = computed(() => slidePolls.value.length > 0);
 
-// Active poll: use activeBySlide mapping or fall back to first
+// Active poll: use server's activeBySlide mapping or fall back to first declared
 const activeId = computed(() => {
   if (!hasPolls.value) return null;
-  const mapped = activeBySlide.value[String(currentSlide.value)];
+  const mapped = activeBySlide.value[String(props.slideIndex)];
   if (mapped) return mapped;
-  return slidePolls.value[0]?.id ?? null;
+  // Fall back to first declared ID (preserves declaration order)
+  const first = props.pollIds[0];
+  return first ?? slidePolls.value[0]?.id ?? null;
 });
 const active = computed<Poll | null>(() => {
   if (!activeId.value) return null;
@@ -162,7 +158,6 @@ const wcWords = computed(() => {
 });
 const wcMax = computed(() => Math.max(...wcWords.value.map((w) => w.count), 1));
 
-// Helpers — all used in template
 function pctOf(i: number): number {
   return totalVotes.value ? Math.round(((votesArr.value[i] ?? 0) / totalVotes.value) * 100) : 0;
 }
@@ -196,8 +191,8 @@ function wcOp(c: number): number {
 
 // Actions
 function selectPoll(id: string) {
-  activeBySlide.value[String(currentSlide.value)] = id;
-  sendToServer({ type: "poll_selected", slideIndex: currentSlide.value, pollId: id });
+  activeBySlide.value[String(props.slideIndex)] = id;
+  sendToServer({ type: "poll_selected", slideIndex: props.slideIndex, pollId: id });
 }
 function nextPoll() {
   const list = slidePolls.value;
@@ -225,7 +220,7 @@ function doReveal() {
 function resetPoll() {
   if (!activeId.value) return;
   sendToServer({ type: "poll_reset", pollId: activeId.value });
-  const firstId = slidePolls.value[0]?.id;
+  const firstId = props.pollIds[0] ?? slidePolls.value[0]?.id;
   if (firstId) selectPoll(firstId);
 }
 </script>

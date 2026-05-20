@@ -1,9 +1,9 @@
 <template>
-  <div v-if="!isPresenter" class="poll-audience-root">
+  <div class="poll-audience-root">
     <div class="poll-header">
       <span class="poll-title">📊 {{ activeQuestion }}</span>
       <div class="poll-meta">
-        <span class="slide-num">Slide {{ currentSlide }}</span>
+        <span class="slide-num">Slide {{ slideIndex }}</span>
         <span class="poll-count">👥 {{ localAudience }}</span>
         <span class="poll-dot" :class="connected ? 'on' : 'off'" />
       </div>
@@ -66,17 +66,14 @@
 </template>
 
 <script setup lang="ts">
-import { useNav } from "@slidev/client";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { createAudienceWs } from "../setup/polls";
 import type { ActivePollMap, Poll, PollOption, ServerMessage } from "../types";
 
-const isPresenter = computed(() => {
-  if (typeof window === "undefined") return false;
-  return window.location.pathname.includes("/presenter");
+const props = defineProps({
+  /** 1-based slide index (passed from Poll.vue via useSlideContext().$page) */
+  slideIndex: { type: Number, required: true },
 });
-
-const { currentPage: currentSlide } = useNav();
 
 const localPolls = ref<Poll[]>([]);
 const activeBySlide = ref<ActivePollMap>({});
@@ -85,9 +82,9 @@ const connected = ref(false);
 let audienceWs: WebSocket | null = null;
 
 const active = computed<Poll | null>(() => {
-  const ps = localPolls.value.filter((p) => Number(p.slideIndex) === currentSlide.value);
+  const ps = localPolls.value.filter((p) => Number(p.slideIndex) === props.slideIndex);
   if (!ps.length) return null;
-  const aid = activeBySlide.value[String(currentSlide.value)];
+  const aid = activeBySlide.value[String(props.slideIndex)];
   if (aid) {
     const found = ps.find((p) => p.id === aid);
     if (found) return found;
@@ -145,7 +142,7 @@ function handleMsg(msg: ServerMessage) {
       localAudience.value = msg.audienceCount;
       break;
     case "presenter_authenticated":
-      // Not expected on audience socket but handled gracefully
+      // Not expected on audience socket
       break;
   }
 }
