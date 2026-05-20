@@ -17,7 +17,7 @@
     <!-- ── Tab selector (multi-poll per slide) ────────────────── -->
     <div v-if="slidePolls.length > 1" class="poll-selector">
       <button
-        v-for="p in slidePolls"
+        v-for="(p, i) in slidePolls"
         :key="p.id"
         class="poll-tab"
         :class="{ active: activeId === p.id }"
@@ -25,7 +25,7 @@
         @click="!readonly && selectPoll(p.id)"
       >
         <span class="tab-icon">{{ typeIcon(p.type) }}</span>
-        <span class="tab-q">{{ trunc(p.question, 26) }}</span>
+        <span class="tab-q">Q{{ i + 1 }}</span>
         <span v-if="!readonly" class="tab-badge" :class="'state-' + (p.state || 'idle')">{{ p.state ?? "idle" }}</span>
       </button>
     </div>
@@ -255,7 +255,7 @@ function resetPoll() {
 .poll-tab:hover:not(:disabled)  { background: rgba(194,154,91,0.12); }
 .poll-tab.active { background: rgba(194,154,91,0.22); color: #f8f6f0; }
 .poll-tab:disabled { cursor: default; }
-.tab-q     { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.tab-q     { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
 .tab-badge { font-size: 0.65rem; padding: 0.08rem 0.3rem; border-radius: 4px; }
 .state-voting { background: #166534; color: #86efac; }
 .state-closed { background: #1e3a5f; color: #a8bdd0; }
