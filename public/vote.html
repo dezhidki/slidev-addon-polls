@@ -142,11 +142,19 @@
       el.textContent = {connected:'Connected',connecting:'Connecting...',disconnected:'Reconnecting...'}[s]||s
     }
 
+    function votedKey(id) { return `poll_voted_${id}` }
+    function hasVotedFor(id) { return sessionStorage.getItem(votedKey(id)) === '1' }
+    function markVoted(id) { sessionStorage.setItem(votedKey(id), '1') }
+    function clearVoted(id) { sessionStorage.removeItem(votedKey(id)) }
+
     function mergePolls(incoming) {
       const next = {}
       ;(incoming || []).forEach(p => {
-        const old = allPolls[p.id]
-        next[p.id] = { ...p, hasVoted: old?.hasVoted || false }
+        // If poll was reset (state back to idle, votes all zero), clear stored vote
+        const prevState = allPolls[p.id]?.state
+        const wasReset = prevState && prevState !== 'idle' && p.state === 'idle'
+        if (wasReset) clearVoted(p.id)
+        next[p.id] = { ...p, hasVoted: hasVotedFor(p.id) }
       })
       allPolls = next
     }
@@ -214,6 +222,7 @@
     function vote(pollId, i) {
       if (ws?.readyState !== WebSocket.OPEN) return
       ws.send(JSON.stringify({type:'audience_vote', pollId, optionIndex: i}))
+      markVoted(pollId)
       if (allPolls[pollId]) allPolls[pollId].hasVoted = true
       render()
     }
@@ -224,6 +233,7 @@
       const text = input.value.trim()
       if (!text) return
       ws.send(JSON.stringify({type:'audience_word', pollId: id, text}))
+      markVoted(id)
       if (allPolls[id]) allPolls[id].hasVoted = true
       input.value = ''
       render()

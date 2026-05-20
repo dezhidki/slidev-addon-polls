@@ -76,8 +76,15 @@ wss.on("connection", (ws, req) => {
 
       case "audience_vote": {
         const poll = allPolls.find((p) => p.id === msg.pollId);
-        if (poll && msg.optionIndex >= 0 && msg.optionIndex < (poll.options || []).length) {
+        if (
+          poll &&
+          poll.state === "voting" &&
+          msg.optionIndex >= 0 &&
+          msg.optionIndex < (poll.options || []).length &&
+          !poll.voters.has(ws)
+        ) {
           if (!poll.votes) poll.votes = new Array((poll.options || []).length).fill(0);
+          poll.voters.add(ws);
           poll.votes[msg.optionIndex]++;
           syncAll();
         }
@@ -86,10 +93,17 @@ wss.on("connection", (ws, req) => {
 
       case "audience_word": {
         const poll = allPolls.find((p) => p.id === msg.pollId);
-        if (poll && poll.type === "wordcloud" && msg.text) {
+        if (
+          poll &&
+          poll.type === "wordcloud" &&
+          poll.state === "voting" &&
+          msg.text &&
+          !poll.voters.has(ws)
+        ) {
           if (!poll.wordCounts) poll.wordCounts = {};
           const word = String(msg.text).trim().toLowerCase().slice(0, 32);
           if (word) {
+            poll.voters.add(ws);
             poll.wordCounts[word] = (poll.wordCounts[word] || 0) + 1;
             syncAll();
           }
@@ -103,6 +117,7 @@ wss.on("connection", (ws, req) => {
           votes: new Array((p.options || []).length).fill(0),
           state: "idle",
           revealed: false,
+          voters: new Set(),
         }));
         console.log(`[poll-server] Defined ${allPolls.length} polls`);
         syncAll();
@@ -133,6 +148,7 @@ wss.on("connection", (ws, req) => {
           poll.state = "idle";
           poll.votes = new Array((poll.options || []).length).fill(0);
           poll.revealed = false;
+          poll.voters = new Set();
           syncAll();
         }
         break;
@@ -208,6 +224,8 @@ wss.on("connection", (ws, req) => {
       console.log("[poll-server] Presenter disconnected");
     } else {
       audienceSockets.delete(ws);
+      // Remove disconnected socket from all voter sets
+      for (const p of allPolls) p.voters?.delete(ws);
       broadcast({ type: "audience_state", audienceCount: audienceSockets.size });
     }
   });
