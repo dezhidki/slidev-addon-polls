@@ -41,6 +41,9 @@
     "setup/**/*",
     "poll-server/**/*",
     "public/**/*",
+    "global-bottom.vue",
+    "index.ts",
+    "types.ts",
     "package.json",
     "README.md"
   ],
