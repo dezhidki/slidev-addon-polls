@@ -1,86 +1,53 @@
 ---
-theme: slidev-theme-jyu
+theme: default
 addons:
-  - slidev-addon-polls
-title: "Slidev Polls Demo"
-download: false
-favicon: https://jyu-polls.dezhidki-hermes.party/jyu-logo-cover.svg
-pollQr: "https://jyu-polls.dezhidki-hermes.party/vote.html"
+  - "@/.." # this repo; in your own deck: slidev-addon-polls
+title: Slidev polls demo
+# pollUrl: https://your-public-host/vote
 ---
 
-# Slidev Poll Addon
+# Live polls for Slidev
 
-Real-time audience polling for Slidev presentations.
+Scan, vote, watch the slide update.
 
-🗳️ **Choice Polls** · 🎯 **Quizzes** · ☁️ **Word Clouds** · 📱 **QR Code Join**
+<PollQr class="w-40 mx-auto mt-8" />
 
----
-
-# How It Works
-
-1. **Start the poll server**
-   ```bash
-   node poll-server/server.js 3031 your-secret-token
-   ```
-2. **Add `<Poll>` to any slide**
-   ```vue
-   <Poll :questions="[
-     { type: 'choice', question: 'Which?', options: ['A', 'B'] },
-     { type: 'quiz', question: 'What is CSS?', options: [...], correctAnswer: 1 },
-     { type: 'wordcloud', question: 'One word:' },
-   ]" />
-   ```
-3. **Share the vote page** at `/vote.html`
+<!--
+Run with `npm run dev`, open the presenter view, and open /vote on your phone.
+-->
 
 ---
 
-# Choice Poll 🗳️
+# Choice
 
-Multiple polls on one slide — switch between them with tabs.
-
-<Poll :questions="[
-  { type: 'choice', question: 'Which programming paradigm do you prefer?', options: ['Object-Oriented', 'Functional', 'Procedural', 'Declarative'] },
-  { type: 'choice', question: 'What is your favorite language?', options: ['Python', 'TypeScript', 'Rust', 'Haskell'] },
-]" />
+<Poll
+  question="Which paradigm do you reach for first?"
+  :options="['Object-oriented', 'Functional', 'Procedural', 'Whatever the codebase uses']"
+/>
 
 ---
 
-# Quiz Time 🎯
+# Quiz
 
-Start the poll, let the audience vote, close it, then reveal the answer!
+<Poll
+  question="What does CSS stand for?"
+  :options="['Computer Style Sheets', 'Cascading Style Sheets', 'Creative Style System']"
+  :correct="1"
+/>
 
-<Poll :questions="[
-  { type: 'quiz', question: 'What does CSS stand for?', options: ['Computer Style Sheets', 'Cascading Style Sheets', 'Creative Style System', 'Colorful Style Sheets'], correctAnswer: 1 },
-]" />
-
----
-
-# Word Cloud ☁️
-
-Free-form text input — audience types words and they form a live cloud.
-
-<Poll :questions="[
-  { type: 'wordcloud', question: 'Describe this presentation in one word:' },
-]" />
+<!--
+The room only sees the distribution once you close the voting, and the right answer
+once you reveal it. You see both all along.
+-->
 
 ---
 
-layout: fact
+# Word cloud
 
-## Did You Know?
-
-Slidev supports **dark mode** out of the box. The JYU theme includes custom dark mode styling with the university brand colors.
-
-Toggle dark mode with the button in the corner! 🌙
+<Poll question="One word for this lecture so far?" />
 
 ---
 
-layout: end
+# No poll here
 
-# Thank You 🎓
-
-## Resources
-
-- 🌐 Theme: [github.com/dezhidki/jyu-slidev-theme](https://github.com/dezhidki/jyu-slidev-theme)
-- 📊 Addon: [github.com/dezhidki/slidev-addon-polls](https://github.com/dezhidki/slidev-addon-polls)
-- 📧 Contact: denis@dezhidki-hermes.party
+Phones show "No poll right now" — unless the last poll is still open.
