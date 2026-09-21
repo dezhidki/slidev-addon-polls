@@ -1,0 +1,46 @@
+{
+  "name": "slidev-addon-polls",
+  "version": "0.3.0",
+  "type": "module",
+  "description": "Live polls for Slidev — choice polls, quizzes and word clouds that the audience answers on their phones",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dezhidki/slidev-addon-polls.git"
+  },
+  "keywords": [
+    "slidev-addon",
+    "slidev",
+    "poll",
+    "quiz",
+    "wordcloud",
+    "live"
+  ],
+  "scripts": {
+    "dev": "slidev demo/slides.md --remote",
+    "test": "node --test server/polls.test.js",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "ws": "^8.20.1"
+  },
+  "engines": {
+    "slidev": ">=v51.0.0"
+  },
+  "files": [
+    "components",
+    "server",
+    "setup",
+    "client.ts",
+    "global-bottom.vue",
+    "global-top.vue"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
+    "@slidev/cli": "^53.0.0",
+    "@slidev/theme-default": "latest",
+    "@types/qrcode": "^1.5.6"
+  }
+}

@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Live poll</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #fff; --fg: #111; --quiet: #595959; --line: #cfcfcf; --tint: rgb(0 0 0 / 0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #111; --fg: #f3f3f3; --quiet: #a6a6a6; --line: #444; --tint: rgb(255 255 255 / 0.12); }
+    }
+    * { box-sizing: border-box; margin: 0; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      min-height: 100dvh;
+      background: var(--bg);
+      color: var(--fg);
+      font: 1.0625rem/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    ::selection { background: var(--fg); color: var(--bg); }
+    main { max-width: 34rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+
+    #offline {
+      position: sticky; top: 0; z-index: 1;
+      padding: 0.6rem 1.25rem;
+      background: var(--fg); color: var(--bg);
+      font-size: 0.9rem; text-align: center;
+    }
+
+    section + section { margin-top: 3rem; padding-top: 3rem; border-top: 1px solid var(--line); }
+    h1 { font-size: 1.6rem; line-height: 1.15; letter-spacing: -0.01em; text-wrap: balance; }
+    .hint { margin: 0.5rem 0 1.5rem; color: var(--quiet); }
+    .empty h1 { margin-top: 20dvh; }
+
+    .options { display: grid; gap: 0.6rem; }
+    button, input { font: inherit; color: inherit; border-radius: 0.6rem; touch-action: manipulation; }
+    :focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+
+    .option {
+      position: relative; overflow: hidden;
+      display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.75rem;
+      width: 100%; min-height: 3.5rem; padding: 0.75rem 1rem;
+      border: 1.5px solid var(--line); background: none;
+      text-align: left; cursor: pointer;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+    .option:enabled:hover { border-color: var(--fg); }
+    .option:enabled:active { transform: scale(0.985); }
+    .option:disabled { cursor: default; }
+    .option > * { position: relative; }
+    .option .bar {
+      position: absolute; inset: 0 auto 0 0;
+      background: var(--tint);
+    }
+    .option .dot { width: 1.15rem; height: 1.15rem; border: 1.5px solid var(--quiet); border-radius: 50%; }
+    .option.mine { border-color: var(--fg); border-width: 2px; font-weight: 650; }
+    .option.mine .dot { border: 0.36rem solid var(--fg); }
+    .option .share { font-variant-numeric: tabular-nums; color: var(--quiet); }
+    .option.wrong { opacity: 0.5; }
+    .option small { display: block; font-size: 0.8rem; font-weight: 400; color: var(--quiet); }
+
+    form { display: flex; gap: 0.6rem; }
+    input {
+      flex: 1; min-width: 0; min-height: 3.5rem; padding: 0 1rem;
+      border: 1.5px solid var(--line); background: none;
+    }
+    input::placeholder { color: var(--quiet); }
+    input:focus { border-color: var(--fg); outline: none; }
+    .send {
+      min-height: 3.5rem; padding: 0 1.4rem;
+      border: 0; background: var(--fg); color: var(--bg);
+      font-weight: 650; cursor: pointer;
+    }
+    :disabled { opacity: 0.45; cursor: default; }
+    .option:disabled { opacity: 1; }
+    .option.wrong:disabled { opacity: 0.5; }
+
+    .cloud { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.9rem; margin-top: 1.75rem; line-height: 1.15; }
+    .cloud span { font-weight: 650; overflow-wrap: anywhere; }
+
+    /* Reactions: a thumb-reachable bar; the emoji float up on the big screen. */
+    #reactions {
+      position: fixed; inset: auto 0 0; z-index: 1;
+      display: flex; justify-content: center; gap: 0.5rem;
+      padding: 0.6rem 1rem calc(0.6rem + env(safe-area-inset-bottom));
+      background: var(--bg); border-top: 1px solid var(--line);
+    }
+    #reactions button {
+      flex: 0 1 4rem; min-height: 3.25rem; padding: 0;
+      border: 1.5px solid var(--line); background: none;
+      font-size: 1.6rem; line-height: 1; cursor: pointer;
+    }
+    #reactions button:active { border-color: var(--fg); }
+    #reactions button.sent { animation: sent 0.35s cubic-bezier(0.2, 0.7, 0.3, 1); }
+    /* Cooling down: the buttons sit out, and a line along the top runs out as they come back. */
+    #reactions::before {
+      content: ""; position: absolute; inset: -1px 0 auto; height: 2px;
+      background: var(--fg); transform-origin: left; transform: scaleX(0);
+    }
+    #reactions.cooling::before { animation: cooldown var(--wait) linear; }
+    @keyframes cooldown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+    @keyframes sent { 40% { transform: translateY(-0.5rem) scale(1.25); } }
+    body:has(#reactions:not([hidden])) main { padding-bottom: 7rem; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .option { transition: none; }
+      #reactions button.sent, #reactions.cooling::before { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="offline" role="status" hidden></div>
+  <main id="polls" aria-live="polite"></main>
+  <nav id="reactions" aria-label="Send a reaction" hidden></nav>
+
+  <script>
+    // Tiny DOM builder. Text only ever goes in through textContent: the word cloud is
+    // other people's input.
+    function h(tag, props, ...children) {
+      const el = Object.assign(document.createElement(tag), props);
+      el.append(...children.filter((c) => c != null));
+      return el;
+    }
+    // Rebuild a region only when what it shows has changed, so a classmate's vote
+    // arriving doesn't wipe the word you are typing.
+    function patch(el, key, build) {
+      key = JSON.stringify(key);
+      if (el.dataset.key === key) return;
+      el.dataset.key = key;
+      el.replaceChildren(...build());
+    }
+
+    // localStorage can throw (private mode, blocked cookies); then we just forget on reload.
+    const memory = {};
+    function stored(key, value) {
+      try {
+        if (value !== undefined) localStorage.setItem(key, JSON.stringify(value));
+        return JSON.parse(localStorage.getItem(key));
+      } catch {
+        if (value !== undefined) memory[key] = value;
+        return memory[key] ?? null;
+      }
+    }
+    const voter = stored("poll-voter") ?? stored("poll-voter", Math.random().toString(36).slice(2) + Date.now().toString(36));
+    const answers = stored("poll-answers") ?? {}; // poll id → { round, answer }
+    const mine = (p) => (answers[p.id]?.round === p.round ? answers[p.id].answer : undefined);
+
+    let ws;
+    let state = { slide: 0, visible: [], reactions: [], cooldown: 3000, polls: [] };
+
+    function connect() {
+      // The page lives at <base>/vote (dev) or <base>/vote/ (static hosts); the socket at <base>/polls.
+      const base = location.href.replace(/^http/, "ws").replace(/vote\/?(index\.html)?([?#].*)?$/, "");
+      ws = new WebSocket(`${base}polls`);
+      ws.onopen = () => ws.send(JSON.stringify({ type: "hello", role: "audience", voter }));
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type !== "state") return;
+        state = { visible: [], reactions: [], cooldown: 3000, ...msg }; // tolerate an older server
+        render();
+      };
+      ws.onclose = () => {
+        render();
+        setTimeout(connect, 2000);
+      };
+    }
+
+    function answer(p, type, payload, value) {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type, id: p.id, ...payload }));
+      answers[p.id] = { round: p.round, answer: value };
+      stored("poll-answers", answers);
+      render();
+    }
+
+    function hint(p, answered) {
+      if (p.revealed) {
+        if (answered === undefined) return "The right answer is marked.";
+        return answered === p.correct ? "Correct!" : "Not quite. The right answer is marked.";
+      }
+      if (p.state === "idle") return "Voting hasn't opened yet.";
+      if (p.state === "closed") return answered === undefined ? "Voting is closed." : "Voting is closed. Your answer is in.";
+      if (answered !== undefined) return "Your answer is in.";
+      return p.options ? "Pick one." : "Send one word or a short phrase.";
+    }
+
+    function renderOptions(p, answered, online) {
+      const showResults = p.votes && (p.state === "closed" || answered !== undefined);
+      return p.options.map((label, i) => {
+        const share = p.total ? Math.round((p.votes?.[i] / p.total) * 100) : 0;
+        const correct = p.revealed && i === p.correct;
+        return h("button",
+          {
+            className: `option${answered === i ? " mine" : ""}${p.revealed && !correct ? " wrong" : ""}`,
+            disabled: !online || p.state !== "open" || answered !== undefined,
+            onclick: () => answer(p, "vote", { option: i }, i),
+          },
+          showResults ? h("span", { className: "bar", style: `width:${share}%` }) : null,
+          h("span", { className: "dot" }),
+          h("span", {}, label, correct ? h("small", {}, "Correct answer") : null),
+          showResults ? h("span", { className: "share" }, `${share} %`) : null,
+        );
+      });
+    }
+
+    function renderWordForm(p, answered, online) {
+      if (answered !== undefined) return [h("p", {}, "You sent: ", h("strong", {}, answered))];
+      if (p.state !== "open") return [];
+      const input = h("input", { name: "word", maxLength: 40, autocomplete: "off", enterKeyHint: "send", placeholder: "Your word", ariaLabel: "Your word" });
+      return [h("form",
+        { onsubmit: (event) => {
+            event.preventDefault();
+            const text = input.value.trim();
+            if (text) answer(p, "word", { text }, text);
+          } },
+        input,
+        h("button", { className: "send", disabled: !online }, "Send"),
+      )];
+    }
+
+    function renderCloud(p) {
+      const most = Math.max(1, ...p.words.map(([, n]) => n));
+      return [...p.words]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([word, n]) => h("span", { style: `font-size:${0.9 + (1.6 * n) / most}rem` }, word));
+    }
+
+    // The deck sets how long one person waits between reactions, and the server holds
+    // everyone to it. The bar sits that time out rather than pretend a tap was sent. The
+    // moment is remembered across reloads, because the server remembers the person too.
+    let coolUntil = stored("poll-cool-until") ?? 0;
+    let coolTimer;
+    function cool() {
+      const bar = document.getElementById("reactions");
+      const wait = coolUntil - Date.now();
+      for (const button of bar.children) button.disabled = wait > 0;
+      bar.classList.remove("cooling");
+      clearTimeout(coolTimer);
+      if (wait <= 0) return;
+      bar.style.setProperty("--wait", `${wait}ms`);
+      void bar.offsetWidth; // restart the line
+      bar.classList.add("cooling");
+      coolTimer = setTimeout(cool, wait);
+    }
+
+    function renderReactions(online) {
+      const bar = document.getElementById("reactions");
+      bar.hidden = !online || !state.reactions.length;
+      patch(bar, state.reactions, () =>
+        state.reactions.map((emoji) => {
+          const button = h("button", { ariaLabel: `React with ${emoji}` }, emoji);
+          button.onclick = () => {
+            if (Date.now() < coolUntil || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({ type: "react", emoji }));
+            coolUntil = stored("poll-cool-until", Date.now() + state.cooldown);
+            button.classList.remove("sent");
+            void button.offsetWidth; // restart the animation on a quick second tap
+            button.classList.add("sent");
+            cool();
+          };
+          return button;
+        }),
+      );
+      cool();
+    }
+
+    function render() {
+      const online = ws.readyState === WebSocket.OPEN;
+      const offline = document.getElementById("offline");
+      offline.hidden = online;
+      offline.textContent = state.type ? "Connection lost. Reconnecting…" : "Connecting…";
+
+      // What is on the presenter's screen now, plus anything still open from an earlier slide.
+      const visible = state.polls.filter((p) => state.visible.includes(p.id) || p.state === "open");
+      renderReactions(online);
+      const root = document.getElementById("polls");
+      root.className = visible.length ? "" : "empty";
+      if (!visible.length) {
+        return patch(root, "empty", () => [
+          h("h1", {}, "No poll right now"),
+          h("p", { className: "hint" }, "Keep this page open. The next poll shows up here by itself."),
+        ]);
+      }
+
+      patch(root, visible.map((p) => p.id), () =>
+        visible.map((p) => h("section", { id: `poll-${p.id}` }, h("h1", {}, p.question), h("p", { className: "hint" }), h("div", { className: "answer" }), h("div", { className: "cloud" }))),
+      );
+      for (const p of visible) {
+        const [, hintEl, answerEl, cloudEl] = document.getElementById(`poll-${p.id}`).children;
+        const answered = mine(p);
+        hintEl.textContent = hint(p, answered);
+        if (p.options) {
+          answerEl.className = "answer options";
+          patch(answerEl, [p, answered, online], () => renderOptions(p, answered, online));
+        } else {
+          patch(answerEl, [p.state, p.round, answered, online], () => renderWordForm(p, answered, online));
+          patch(cloudEl, p.words, () => renderCloud(p));
+        }
+      }
+    }
+
+    connect();
+    render();
+  </script>
+</body>
+</html>
