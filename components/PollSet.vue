@@ -1,22 +1,30 @@
-<!--
-  Several polls about the same thing — one code block, say — in the space of one. Move
-  between them like any other click on the slide (→ / ←); the phones follow along.
-
-  <PollSet :polls="[
-    { question: 'What does it print?', options: ['1', '2', 'Nothing'], correct: 1 },
-    { question: 'And if n is negative?', options: ['Loops forever', 'RecursionError'], correct: 1 },
-  ]" />
-
-  In PDF export all of them are printed under each other (with --with-clicks: one per page).
--->
 <script setup lang="ts">
+/**
+ * Several polls about the same thing — one code block, say — in the space of one. Move
+ * between them like any other click on the slide (→ / ←); the phones follow along.
+ *
+ *     <PollSet :polls="[
+ *       { question: 'What does it print?', options: ['1', '2', 'Nothing'], correct: 1 },
+ *       { question: 'And if n is negative?', options: ['Loops forever', 'RecursionError'], correct: 1 },
+ *     ]" />
+ *
+ * In PDF export all of them are printed under each other (with `--with-clicks`: one per
+ * page).
+ *
+ * @author Written by Claude (Anthropic) under human review.
+ */
 import { useNav, useSlideContext } from "@slidev/client";
 import { onMounted, onUnmounted, ref, watchEffect } from "vue";
 import Poll from "./Poll.vue";
 
-const props = defineProps<{
-  polls: { question: string; options?: string[]; correct?: number }[];
-}>();
+/** One question of the set. The same three props `<Poll>` takes. */
+interface SetMember {
+  question: string;
+  options?: string[];
+  correct?: number;
+}
+
+const props = defineProps<{ polls: SetMember[] }>();
 
 const { isPrintMode, isPrintWithClicks } = useNav();
 const { $clicksContext } = useSlideContext();
@@ -26,7 +34,9 @@ const current = ref(0);
 const clicksId = `poll-set-${props.polls[0]?.question}`;
 onMounted(() => {
   const clicks = $clicksContext.calculateSince("+1", props.polls.length - 1);
-  if (!clicks) return;
+  if (!clicks) {
+    return;
+  }
   $clicksContext.register(clicksId, clicks);
   watchEffect(() => {
     current.value = Math.min(Math.max(clicks.currentOffset.value + 1, 0), props.polls.length - 1);

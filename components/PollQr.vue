@@ -1,24 +1,30 @@
-<!--
-  QR code + address of the voting page. <Poll> shows one; use it on its own for a
-  "join now" slide: <PollQr class="w-60" />
-
-  Address, first match wins: the `url` prop, `pollUrl` in the headmatter, the page's own
-  origin — or the dev server's LAN address while you are browsing on localhost.
--->
 <script setup lang="ts">
+/**
+ * QR code and address of the voting page. `<Poll>` shows one; use it on its own for a
+ * "join now" slide:
+ *
+ *     <PollQr class="w-60" />
+ *
+ * Address, first match wins: the `url` prop, `pollUrl` in the headmatter, the page's own
+ * origin — or the dev server's LAN address while you are browsing on localhost.
+ *
+ * @author Written by Claude (Anthropic) under human review.
+ */
 import QRCode from "qrcode";
 import { computed, ref, watchEffect } from "vue";
-import configs from "#slidev/configs";
-import { polls } from "../client";
+import { pollConfig, polls } from "../client";
 
-const props = defineProps<{ url?: string }>();
+const props = defineProps<{
+  /** Where the phones should go. Overrides everything else. */
+  url?: string;
+}>();
 
 const onLocalhost = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 const url = computed(
   () =>
     props.url ??
-    (configs as { pollUrl?: string }).pollUrl ??
-    ((onLocalhost && polls.joinUrl) ||
+    pollConfig.pollUrl ??
+    ((onLocalhost && polls.state.joinUrl) ||
       new URL(`${import.meta.env.BASE_URL}vote`, location.href).href),
 );
 

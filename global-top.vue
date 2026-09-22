@@ -1,44 +1,61 @@
-<!--
-  Reactions: emoji the audience taps on their phones float up the side of the slide.
-  Each emoji rises from its own spot, so a hall of hearts reads as one stream of hearts.
-  In presenter mode the corner also counts them for the current slide.
-
-  Headmatter or any slide's frontmatter:
-    reactions: false                 # off
-    reactions: ["👏", "😮", "❓"]     # your own set
--->
 <script setup lang="ts">
+/**
+ * Reactions: emoji the audience taps on their phones float up the side of the slide.
+ * Each emoji rises from its own spot, so a hall of hearts reads as one stream of hearts.
+ * In presenter mode the corner also counts them for the current slide.
+ *
+ * Headmatter, or any slide's frontmatter:
+ *
+ *     reactions: false                 # off
+ *     reactions: ["👏", "😮", "❓"]     # your own set
+ *
+ * @author Written by Claude (Anthropic) under human review.
+ */
 import { useNav } from "@slidev/client";
-import { onUnmounted, ref } from "vue";
-import { polls, reactionListener } from "./client";
+import { ref, watch } from "vue";
+import { polls } from "./client";
+import type { Tally } from "./protocol.ts";
 
 const { isPresenter, isPrintMode } = useNav();
 
+/** One emoji on its way up the side of the slide. */
 interface Floater {
   id: number;
   emoji: string;
+  /** The custom properties the `rise` animation is built from. */
   style: Record<string, string>;
 }
-const floaters = ref<Floater[]>([]);
+
 const MAX_ON_SCREEN = 60; // a flood thins out instead of grinding the projector's laptop
 const MAX_PER_BURST = 6;
+const LANES = 4;
+
+const floaters = ref<Floater[]>([]);
 let nextId = 0;
-const lanes = new Map<string, number>(); // emoji → its spot, in order of first appearance
+/** Emoji to its spot, in order of first appearance. */
+const lanes = new Map<string, number>();
 
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 
-reactionListener.on = (burst) => {
-  if (calm.matches) return; // the presenter's count still moves
-  for (const [emoji, count] of Object.entries(burst)) {
-    if (!lanes.has(emoji)) lanes.set(emoji, lanes.size);
+/** Sends one burst of reactions up the side of the slide. */
+function float(counts: Tally): void {
+  if (calm.matches) {
+    return; // the presenter's count still moves
+  }
+  for (const [emoji, count] of Object.entries(counts)) {
+    if (!lanes.has(emoji)) {
+      lanes.set(emoji, lanes.size);
+    }
     const lane = lanes.get(emoji) ?? 0;
     for (let i = 0; i < Math.min(count, MAX_PER_BURST); i++) {
-      if (floaters.value.length >= MAX_ON_SCREEN) return;
+      if (floaters.value.length >= MAX_ON_SCREEN) {
+        return;
+      }
       floaters.value.push({
         id: nextId++,
         emoji,
         style: {
-          "--lane": String(lane % 4),
+          "--lane": String(lane % LANES),
           "--sway": `${Math.random() * 56 - 28}px`,
           "--size": `${0.85 + Math.random() * 0.5}`,
           "--time": `${2.6 + Math.random() * 1.2}s`,
@@ -47,13 +64,16 @@ reactionListener.on = (burst) => {
       });
     }
   }
-};
-onUnmounted(() => {
-  reactionListener.on = undefined;
-});
+}
+
+// `seq` counts bursts, so this fires again even when the same emoji arrives twice.
+watch(
+  () => polls.state.burst.seq,
+  () => float(polls.state.burst.counts),
+);
 
 const land = (id: number) => {
-  floaters.value = floaters.value.filter((f) => f.id !== id);
+  floaters.value = floaters.value.filter((floater) => floater.id !== id);
 };
 </script>
 
@@ -63,8 +83,8 @@ const land = (id: number) => {
       {{ f.emoji }}
     </span>
 
-    <p v-if="isPresenter && Object.keys(polls.tally).length" class="tally">
-      <span v-for="(count, emoji) in polls.tally" :key="emoji">{{ emoji }} {{ count }}</span>
+    <p v-if="isPresenter && Object.keys(polls.state.tally).length" class="tally">
+      <span v-for="(count, emoji) in polls.state.tally" :key="emoji">{{ emoji }} {{ count }}</span>
     </p>
   </div>
 </template>

@@ -1,6 +1,6 @@
 {
   "name": "slidev-addon-polls",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "description": "Live polls for Slidev — choice polls, quizzes and word clouds that the audience answers on their phones",
   "license": "MIT",
@@ -18,7 +18,11 @@
   ],
   "scripts": {
     "dev": "slidev demo/slides.md --remote",
-    "test": "node --test server/polls.test.js",
+    "predev": "npm run build",
+    "build": "node scripts/build-vote.mjs",
+    "prepare": "npm run build",
+    "test": "node --test protocol.test.ts server/polls.test.ts",
+    "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "lint:fix": "biome check --write ."
   },
@@ -33,14 +37,23 @@
     "components",
     "server",
     "setup",
+    "dist/vote.html",
     "client.ts",
+    "protocol.ts",
     "global-bottom.vue",
-    "global-top.vue"
+    "global-top.vue",
+    "!**/*.test.ts"
   ],
   "devDependencies": {
-    "@biomejs/biome": "^2.4.15",
+    "@biomejs/biome": "^2.5.14",
     "@slidev/cli": "^53.0.0",
     "@slidev/theme-default": "latest",
-    "@types/qrcode": "^1.5.6"
+    "@types/alpinejs": "^3.13.11",
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.18.1",
+    "alpinejs": "^3.17.4",
+    "esbuild": "^0.28.2",
+    "typescript": "^6.0.3",
+    "vue-tsc": "^3.3.11"
   }
 }
