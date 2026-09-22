@@ -1,28 +1,38 @@
-<!--
-  <Poll question="Tabs or spaces?" :options="['Tabs', 'Spaces']" />               choice
-  <Poll question="What is 2 + 2?" :options="['3', '4', '5']" :correct="1" />      quiz
-  <Poll question="One word for this lecture?" />                                  word cloud
-
-  Draws with the slide's own text colour and font, plus --slidev-theme-primary for the
-  bars, so it looks at home in any theme. The controls only exist in presenter mode.
-  The QR code sits in the slide's top right corner, beside the title, as large as the
-  space above the slide's content allows — so it never reaches into the content.
-  --poll-qr-size caps it; --poll-qr-top / -right move it.
-  In PDF export only the question and its options are printed.
--->
 <script setup lang="ts">
+/**
+ * One live poll on a slide: a choice poll, a quiz, or a word cloud.
+ *
+ *     <Poll question="Tabs or spaces?" :options="['Tabs', 'Spaces']" />              choice
+ *     <Poll question="What is 2 + 2?" :options="['3', '4', '5']" :correct="1" />     quiz
+ *     <Poll question="One word for this lecture?" />                                 cloud
+ *
+ * Draws with the slide's own text colour and font, plus `--slidev-theme-primary` for the
+ * bars, so it looks at home in any theme. The controls only exist in presenter mode.
+ *
+ * The QR code sits in the slide's top right corner, beside the title, as large as the
+ * space above the slide's content allows — so it never reaches into the content. The
+ * `qrSize` prop (or `--poll-qr-size`) is its full size; `--poll-qr-top` / `--poll-qr-right`
+ * move it. In PDF export only the question and its options are printed.
+ *
+ * @author Written by Claude (Anthropic) under human review.
+ */
 import { useNav, useSlideContext } from "@slidev/client";
 import { computed, onMounted, onUnmounted, ref, watchEffect } from "vue";
-import { definePoll, type PollState, polls, send, showPoll } from "../client";
+import { polls } from "../client";
+import type { PollView } from "../protocol.ts";
 import PollQr from "./PollQr.vue";
 
 const props = defineProps<{
   question: string;
+  /** Absent for a word cloud. */
   options?: string[];
+  /** Index into `options`: makes this a quiz, with a right answer to reveal. */
   correct?: number;
-  /** Set by <PollSet>: [position, of], shown as "2 / 3" */
+  /** How wide the QR code may be, any CSS length. Default 140px. */
+  qrSize?: string;
+  /** Set by `<PollSet>`: [position, of], shown as "2 / 3". */
   step?: [number, number];
-  /** Set by <PollSet> on the members that are not showing: keeps its place, invisibly */
+  /** Set by `<PollSet>` on the members that are not showing: keeps its place, invisibly. */
   hidden?: boolean;
 }>();
 
@@ -30,26 +40,40 @@ const { $page, $renderContext } = useSlideContext();
 const { isPresenter, isPrintMode } = useNav();
 
 const id = `${$page.value}:${props.question}`;
-const def = {
+polls.define({
   id,
   slide: $page.value,
   question: props.question,
   options: props.options,
   correct: props.correct,
-};
-definePoll(def);
-// Phones show the polls that are on the presenter's screen: not the ones in the
-// next-slide preview or the overview, and not the hidden members of a <PollSet>.
+});
+
+// Phones show the polls that are on the presenter's screen: not the ones in the next-slide
+// preview or the overview, and not the hidden members of a <PollSet>.
 const inMainView = ["slide", "presenter"].includes($renderContext.value);
 let leaveScreen: (() => void) | undefined;
 watchEffect(() => {
   leaveScreen?.();
-  leaveScreen = inMainView && !props.hidden ? showPoll(id) : undefined;
+  leaveScreen = inMainView && !props.hidden ? polls.show(id) : undefined;
 });
 onUnmounted(() => leaveScreen?.());
 
-const idle: PollState = { state: "idle", revealed: false, total: 0, votes: null, words: [] };
-const poll = computed(() => polls.byId[id] ?? idle);
+/** What to draw before the server has said anything about this poll. */
+const idle: PollView = {
+  id,
+  slide: $page.value,
+  question: props.question,
+  options: props.options ?? null,
+  quiz: props.correct != null,
+  state: "idle",
+  revealed: false,
+  round: 0,
+  total: 0,
+  votes: props.options?.map(() => 0) ?? null,
+  words: [],
+  correct: null,
+};
+const poll = computed(() => polls.state.byId[id] ?? idle);
 
 const percent = (i: number) =>
   poll.value.total ? Math.round(((poll.value.votes?.[i] ?? 0) / poll.value.total) * 100) : 0;
@@ -59,10 +83,12 @@ const words = computed(() => [...poll.value.words].sort(([a], [b]) => a.localeCo
 const mostCommon = computed(() => Math.max(1, ...poll.value.words.map(([, n]) => n)));
 
 const status = computed(() => {
-  if (!polls.connected) return "Poll server offline";
+  if (!polls.state.connected) {
+    return "Poll server offline";
+  }
   const n = poll.value.total;
   const answers = `${n} ${n === 1 ? "answer" : "answers"}`;
-  const joined = isPresenter.value ? ` · ${polls.audience} joined` : "";
+  const joined = isPresenter.value ? ` · ${polls.state.audience} joined` : "";
   const text = {
     idle: `Voting opens soon${joined}`,
     open: `Voting open · ${answers}${joined}`,
@@ -71,19 +97,27 @@ const status = computed(() => {
   return props.step ? `${props.step.join(" / ")} · ${text}` : text;
 });
 
-// The QR code is pinned to the slide's top right corner and sized to the empty band
+// The QR code is pinned to the slide's top right corner and capped to the empty band
 // beside the title: from its own top down to where the slide's content begins, which is
 // the bottom of the title's margin. Same band on every slide, so the same size.
 const root = ref<HTMLElement>();
 const gap = ref({ width: "0px", height: "0px" });
 let sizes: ResizeObserver | undefined;
 onMounted(() => {
-  const poll = root.value;
-  const code = poll?.querySelector<HTMLElement>(".poll-corner");
-  const title = poll?.closest(".slidev-layout")?.querySelector<HTMLElement>("h1");
-  if (!poll || !code) return;
+  const box = root.value;
+  const code = box?.querySelector<HTMLElement>(".poll-corner");
+  const layout = box?.closest<HTMLElement>(".slidev-layout");
+  const title = layout?.querySelector<HTMLElement>("h1");
+  if (!box || !code) {
+    return;
+  }
+  // On the layout, not on the code: the title's padding is sized from it too.
+  if (props.qrSize) {
+    layout?.style.setProperty("--poll-qr-size", props.qrSize);
+  }
+
   const CLEARANCE = 8;
-  const TOO_SMALL = 64; // below this nobody can scan it: then it keeps its full size
+  const TOO_SMALL = 64; // below this nobody can scan it: then the band stops capping it
   const measure = () => {
     // Layout offsets throughout, so it holds at any slide scale and canvas size.
     let band = Number.POSITIVE_INFINITY;
@@ -94,18 +128,28 @@ onMounted(() => {
         Number.parseFloat(getComputedStyle(title).marginBottom);
       band = contentTop - code.offsetTop - CLEARANCE;
     }
-    code.style.setProperty("--poll-qr-band", band >= TOO_SMALL ? `${band}px` : "100vw");
+    if (band >= TOO_SMALL) {
+      code.style.setProperty("--poll-qr-band", `${band}px`);
+    } else {
+      code.style.removeProperty("--poll-qr-band");
+    }
 
     // No title, or hardly any band: the code does reach into the poll. An invisible float
     // of that size keeps the question and the options from running underneath it.
-    if (poll.offsetParent !== code.offsetParent) return;
-    const width = poll.offsetLeft + poll.offsetWidth - code.offsetLeft + 2 * CLEARANCE;
-    const height = code.offsetTop + code.offsetHeight + 2 * CLEARANCE - poll.offsetTop;
+    if (box.offsetParent !== code.offsetParent) {
+      return;
+    }
+    const width = box.offsetLeft + box.offsetWidth - code.offsetLeft + 2 * CLEARANCE;
+    const height = code.offsetTop + code.offsetHeight + 2 * CLEARANCE - box.offsetTop;
     const reaches = width > 0 && height > 0;
     gap.value = { width: `${reaches ? width : 0}px`, height: `${reaches ? height : 0}px` };
   };
   sizes = new ResizeObserver(measure);
-  for (const el of [poll, code, title]) if (el) sizes.observe(el);
+  for (const el of [box, code, title]) {
+    if (el) {
+      sizes.observe(el);
+    }
+  }
   measure();
 });
 onUnmounted(() => sizes?.disconnect());
@@ -121,7 +165,7 @@ function act(type: "open" | "close" | "reveal" | "reset", event: MouseEvent) {
     return;
   }
   confirmingReset.value = false;
-  send({ type, id });
+  polls.send({ type, id });
 }
 </script>
 
@@ -145,59 +189,67 @@ function act(type: "open" | "close" | "reveal" | "reset", event: MouseEvent) {
     <span class="poll-corner-gap" :style="gap" />
     <p class="poll-question">{{ question }}</p>
 
-      <ol v-if="options" class="poll-options">
-        <li
-          v-for="(option, i) in options"
-          :key="i"
-          :class="{ 'poll-correct': poll.revealed && i === correct, 'poll-wrong': poll.revealed && i !== correct }"
-        >
-          <span class="poll-label">
-            <svg v-if="poll.revealed && i === correct" viewBox="0 0 16 16" aria-label="Correct answer:">
-              <path d="M2.5 8.5l3.5 3.5 7.5-8" />
-            </svg>
-            {{ option }}
-          </span>
-          <span v-if="poll.votes && poll.total" class="poll-count">{{ poll.votes[i] }} · {{ percent(i) }} %</span>
-          <span class="poll-track"><span class="poll-bar" :style="{ transform: `scaleX(${percent(i) / 100})` }" /></span>
-        </li>
-      </ol>
-      <!-- While voting is open only the presenter gets the words, to weed them first. -->
-      <p v-else class="poll-cloud">
-        <component
-          :is="isPresenter ? 'button' : 'span'"
-          v-for="[word, n] in words"
-          :key="word"
-          :style="{ fontSize: `${0.8 + (1.8 * n) / mostCommon}em` }"
-          :title="isPresenter ? 'Remove this word' : undefined"
-          @click="isPresenter && send({ type: 'remove', id, word })"
-        >
-          {{ word }}
-        </component>
-        <span v-if="poll.state === 'open' && !isPresenter" class="poll-note">
-          The words appear when voting closes.
+    <ol v-if="options" class="poll-options">
+      <li
+        v-for="(option, i) in options"
+        :key="i"
+        :class="{
+          'poll-correct': poll.revealed && i === correct,
+          'poll-wrong': poll.revealed && i !== correct,
+        }"
+      >
+        <span class="poll-label">
+          <svg v-if="poll.revealed && i === correct" viewBox="0 0 16 16" aria-label="Correct answer:">
+            <path d="M2.5 8.5l3.5 3.5 7.5-8" />
+          </svg>
+          {{ option }}
         </span>
-      </p>
+        <span v-if="poll.votes && poll.total" class="poll-count">
+          {{ poll.votes[i] }} · {{ percent(i) }} %
+        </span>
+        <span class="poll-track">
+          <span class="poll-bar" :style="{ transform: `scaleX(${percent(i) / 100})` }" />
+        </span>
+      </li>
+    </ol>
 
-      <p class="poll-status" aria-live="polite">{{ status }}</p>
+    <!-- While voting is open only the presenter gets the words, to weed them first. -->
+    <p v-else class="poll-cloud">
+      <component
+        :is="isPresenter ? 'button' : 'span'"
+        v-for="[word, n] in words"
+        :key="word"
+        :style="{ fontSize: `${0.8 + (1.8 * n) / mostCommon}em` }"
+        :title="isPresenter ? 'Remove this word' : undefined"
+        @click="isPresenter && polls.send({ type: 'remove', id, word })"
+      >
+        {{ word }}
+      </component>
+      <span v-if="poll.state === 'open' && !isPresenter" class="poll-note">
+        The words appear when voting closes.
+      </span>
+    </p>
 
-      <div v-if="isPresenter" class="poll-controls">
-        <p v-if="polls.denied">The poll server rejected the presenter password.</p>
-        <template v-else-if="polls.connected">
-          <button v-if="poll.state !== 'open'" @click="act('open', $event)">
-            {{ poll.state === "closed" ? "Reopen voting" : "Open voting" }}
-          </button>
-          <button v-else @click="act('close', $event)">Close voting</button>
-          <button v-if="correct != null && !poll.revealed" :disabled="!poll.total" @click="act('reveal', $event)">
-            Reveal answer
-          </button>
-          <button v-if="poll.total || poll.state !== 'idle'" @click="act('reset', $event)">
-            {{ confirmingReset ? "Really reset?" : "Reset" }}
-          </button>
-          <p v-if="!options && poll.state === 'open'" class="poll-note">
-            Only you see the words until you close voting. Click a word to remove it.
-          </p>
-        </template>
-      </div>
+    <p class="poll-status" aria-live="polite">{{ status }}</p>
+
+    <div v-if="isPresenter" class="poll-controls">
+      <p v-if="polls.state.denied">The poll server rejected the presenter password.</p>
+      <template v-else-if="polls.state.connected">
+        <button v-if="poll.state !== 'open'" @click="act('open', $event)">
+          {{ poll.state === "closed" ? "Reopen voting" : "Open voting" }}
+        </button>
+        <button v-else @click="act('close', $event)">Close voting</button>
+        <button v-if="correct != null && !poll.revealed" :disabled="!poll.total" @click="act('reveal', $event)">
+          Reveal answer
+        </button>
+        <button v-if="poll.total || poll.state !== 'idle'" @click="act('reset', $event)">
+          {{ confirmingReset ? "Really reset?" : "Reset" }}
+        </button>
+        <p v-if="!options && poll.state === 'open'" class="poll-note">
+          Only you see the words until you close voting. Click a word to remove it.
+        </p>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -221,8 +273,10 @@ function act(type: "open" | "close" | "reveal" | "reset", event: MouseEvent) {
   gap: 10px;
   font-size: 15px;
 }
+/* Its own size, capped by whatever band is free beside the title. */
 .poll-corner :deep(.poll-qr-code) {
-  width: min(var(--poll-qr-band, 0px), var(--poll-qr-size, 140px));
+  width: var(--poll-qr-size, 140px);
+  max-width: var(--poll-qr-band, none);
 }
 .poll-corner :deep(figcaption) {
   max-width: 110px;

@@ -1,31 +1,49 @@
-<!-- Renders nothing: keeps the poll connection alive across slides and tells the
-     audience's phones which slide the presenter is on and which reactions it accepts. -->
 <script setup lang="ts">
+/**
+ * Renders nothing: keeps the poll connection alive across slides and tells the audience's
+ * phones which slide the presenter is on and which reactions it accepts.
+ *
+ * `reactions:` in a slide's frontmatter beats the headmatter, which beats the default.
+ * `false` turns them off, a list replaces the emoji, anything else means the default set.
+ * `reactionCooldown:` — seconds one person waits between reactions — works the same way.
+ *
+ * @author Written by Claude (Anthropic) under human review.
+ */
 import { useNav } from "@slidev/client";
 import { watchEffect } from "vue";
-import configs from "#slidev/configs";
-import { sync } from "./client";
+import { pollConfig, polls } from "./client";
 
 const DEFAULT_REACTIONS = ["👍", "👎", "🤔", "❤️"];
 
+/** The two frontmatter keys this addon reads off a single slide. */
+interface SlideFrontmatter {
+  reactions?: unknown;
+  reactionCooldown?: number;
+}
+
+/** Slidev leaves `route.meta.slide` untyped, so this names the one corner we read. */
+interface SlideMeta {
+  slide?: { frontmatter?: SlideFrontmatter };
+}
+
 const { isPresenter, currentPage, currentSlideRoute } = useNav();
 
-// `reactions:` in a slide's frontmatter beats the headmatter, which beats the default.
-// false turns them off, a list replaces the emoji, true means the default set.
+/** The emoji a slide accepts, out of its own frontmatter or the deck's headmatter. */
 function reactionsFor(setting: unknown): string[] {
-  if (setting === false) return [];
+  if (setting === false) {
+    return [];
+  }
   return Array.isArray(setting) ? setting.map(String) : DEFAULT_REACTIONS;
 }
 
-// `reactionCooldown:` — seconds one person waits between reactions (default 3) — likewise.
 watchEffect(() => {
-  const slide = currentSlideRoute.value?.meta?.slide?.frontmatter ?? {};
-  const deck = configs as { reactions?: unknown; reactionCooldown?: number };
-  sync(
+  const meta = currentSlideRoute.value?.meta as SlideMeta | undefined;
+  const slide = meta?.slide?.frontmatter ?? {};
+  polls.sync(
     isPresenter.value,
     currentPage.value,
-    reactionsFor(slide.reactions ?? deck.reactions),
-    slide.reactionCooldown ?? deck.reactionCooldown,
+    reactionsFor(slide.reactions ?? pollConfig.reactions),
+    slide.reactionCooldown ?? pollConfig.reactionCooldown,
   );
 });
 </script>

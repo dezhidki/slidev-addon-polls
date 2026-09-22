@@ -1,4 +1,11 @@
 <!doctype html>
+<!--
+  The voting page, as the audience's phones see it. Alpine binds it to the state in
+  `vote.ts`; `scripts/build-vote.mjs` inlines both into one self-contained file, so a
+  phone needs nothing but the deck's own server.
+
+  Written by Claude (Anthropic) under human review.
+-->
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -105,7 +112,7 @@
     #reactions.cooling::before { animation: cooldown var(--wait) linear; }
     @keyframes cooldown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
     @keyframes sent { 40% { transform: translateY(-0.5rem) scale(1.25); } }
-    body:has(#reactions:not([hidden])) main { padding-bottom: 7rem; }
+    body.has-reactions main { padding-bottom: 7rem; }
 
     @media (prefers-reduced-motion: reduce) {
       .option { transition: none; }
@@ -113,199 +120,108 @@
     }
   </style>
 </head>
-<body>
-  <div id="offline" role="status" hidden></div>
-  <main id="polls" aria-live="polite"></main>
-  <nav id="reactions" aria-label="Send a reaction" hidden></nav>
+<body x-data="votePage" :class="{ 'has-reactions': online && reactions.length > 0 }">
+  <div
+    id="offline"
+    role="status"
+    style="display: none"
+    x-show="!online"
+    x-text="everConnected ? 'Connection lost. Reconnecting…' : 'Connecting…'"
+  ></div>
 
-  <script>
-    // Tiny DOM builder. Text only ever goes in through textContent: the word cloud is
-    // other people's input.
-    function h(tag, props, ...children) {
-      const el = Object.assign(document.createElement(tag), props);
-      el.append(...children.filter((c) => c != null));
-      return el;
-    }
-    // Rebuild a region only when what it shows has changed, so a classmate's vote
-    // arriving doesn't wipe the word you are typing.
-    function patch(el, key, build) {
-      key = JSON.stringify(key);
-      if (el.dataset.key === key) return;
-      el.dataset.key = key;
-      el.replaceChildren(...build());
-    }
+  <main id="polls" aria-live="polite" :class="{ empty: !visible.length }">
+    <template x-if="!visible.length">
+      <section>
+        <h1>No poll right now</h1>
+        <p class="hint">Keep this page open. The next poll shows up here by itself.</p>
+      </section>
+    </template>
 
-    // localStorage can throw (private mode, blocked cookies); then we just forget on reload.
-    const memory = {};
-    function stored(key, value) {
-      try {
-        if (value !== undefined) localStorage.setItem(key, JSON.stringify(value));
-        return JSON.parse(localStorage.getItem(key));
-      } catch {
-        if (value !== undefined) memory[key] = value;
-        return memory[key] ?? null;
-      }
-    }
-    const voter = stored("poll-voter") ?? stored("poll-voter", Math.random().toString(36).slice(2) + Date.now().toString(36));
-    const answers = stored("poll-answers") ?? {}; // poll id → { round, answer }
-    const mine = (p) => (answers[p.id]?.round === p.round ? answers[p.id].answer : undefined);
+    <template x-for="poll in visible" :key="poll.id">
+      <section>
+        <!-- biome-ignore lint/a11y/useHeadingContent: Alpine fills it from the poll -->
+        <h1 x-text="poll.question"></h1>
+        <p class="hint" x-text="hint(poll)"></p>
 
-    let ws;
-    let state = { slide: 0, visible: [], reactions: [], cooldown: 3000, polls: [] };
+        <!-- A choice poll or a quiz: one button per option, with its share once it is shown. -->
+        <template x-if="poll.options">
+          <div class="options">
+            <template x-for="(label, index) in poll.options" :key="index">
+              <button
+                type="button"
+                class="option"
+                :class="{
+                  mine: answered(poll) === index,
+                  wrong: poll.revealed && index !== poll.correct,
+                }"
+                :disabled="!online || poll.state !== 'open' || answered(poll) !== undefined"
+                @click="vote(poll, index)"
+              >
+                <span class="bar" x-show="showResults(poll)" :style="`width:${share(poll, index)}%`"></span>
+                <span class="dot"></span>
+                <span>
+                  <span x-text="label"></span>
+                  <small x-show="poll.revealed && index === poll.correct">Correct answer</small>
+                </span>
+                <span class="share" x-show="showResults(poll)" x-text="`${share(poll, index)} %`"></span>
+              </button>
+            </template>
+          </div>
+        </template>
 
-    function connect() {
-      // The page lives at <base>/vote (dev) or <base>/vote/ (static hosts); the socket at <base>/polls.
-      const base = location.href.replace(/^http/, "ws").replace(/vote\/?(index\.html)?([?#].*)?$/, "");
-      ws = new WebSocket(`${base}polls`);
-      ws.onopen = () => ws.send(JSON.stringify({ type: "hello", role: "audience", voter }));
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.type !== "state") return;
-        state = { visible: [], reactions: [], cooldown: 3000, ...msg }; // tolerate an older server
-        render();
-      };
-      ws.onclose = () => {
-        render();
-        setTimeout(connect, 2000);
-      };
-    }
+        <!-- A word cloud: one word each, and the cloud once the presenter has weeded it. -->
+        <template x-if="!poll.options">
+          <div>
+            <p x-show="answered(poll) !== undefined">
+              You sent: <strong x-text="answered(poll)"></strong>
+            </p>
+            <form
+              x-show="answered(poll) === undefined && poll.state === 'open'"
+              @submit.prevent="sendWord(poll)"
+            >
+              <input
+                x-model="drafts[poll.id]"
+                name="word"
+                maxlength="40"
+                autocomplete="off"
+                enterkeyhint="send"
+                placeholder="Your word"
+                aria-label="Your word"
+              >
+              <button type="submit" class="send" :disabled="!online">Send</button>
+            </form>
+            <div class="cloud">
+              <template x-for="[word, count] in cloud(poll)" :key="word">
+                <span x-text="word" :style="`font-size:${wordSize(poll, count)}`"></span>
+              </template>
+            </div>
+          </div>
+        </template>
+      </section>
+    </template>
+  </main>
 
-    function answer(p, type, payload, value) {
-      if (ws.readyState !== WebSocket.OPEN) return;
-      ws.send(JSON.stringify({ type, id: p.id, ...payload }));
-      answers[p.id] = { round: p.round, answer: value };
-      stored("poll-answers", answers);
-      render();
-    }
+  <nav
+    id="reactions"
+    aria-label="Send a reaction"
+    style="display: none"
+    x-show="online && reactions.length > 0"
+    :class="{ cooling: cooling }"
+    :style="`--wait:${wait}ms`"
+  >
+    <template x-for="emoji in reactions" :key="emoji">
+      <button
+        type="button"
+        x-text="emoji"
+        :aria-label="`React with ${emoji}`"
+        :class="{ sent: sent === emoji }"
+        :disabled="cooling"
+        @click="react(emoji)"
+        @animationend="sent = ''"
+      ></button>
+    </template>
+  </nav>
 
-    function hint(p, answered) {
-      if (p.revealed) {
-        if (answered === undefined) return "The right answer is marked.";
-        return answered === p.correct ? "Correct!" : "Not quite. The right answer is marked.";
-      }
-      if (p.state === "idle") return "Voting hasn't opened yet.";
-      if (p.state === "closed") return answered === undefined ? "Voting is closed." : "Voting is closed. Your answer is in.";
-      if (answered !== undefined) return "Your answer is in.";
-      return p.options ? "Pick one." : "Send one word or a short phrase.";
-    }
-
-    function renderOptions(p, answered, online) {
-      const showResults = p.votes && (p.state === "closed" || answered !== undefined);
-      return p.options.map((label, i) => {
-        const share = p.total ? Math.round((p.votes?.[i] / p.total) * 100) : 0;
-        const correct = p.revealed && i === p.correct;
-        return h("button",
-          {
-            className: `option${answered === i ? " mine" : ""}${p.revealed && !correct ? " wrong" : ""}`,
-            disabled: !online || p.state !== "open" || answered !== undefined,
-            onclick: () => answer(p, "vote", { option: i }, i),
-          },
-          showResults ? h("span", { className: "bar", style: `width:${share}%` }) : null,
-          h("span", { className: "dot" }),
-          h("span", {}, label, correct ? h("small", {}, "Correct answer") : null),
-          showResults ? h("span", { className: "share" }, `${share} %`) : null,
-        );
-      });
-    }
-
-    function renderWordForm(p, answered, online) {
-      if (answered !== undefined) return [h("p", {}, "You sent: ", h("strong", {}, answered))];
-      if (p.state !== "open") return [];
-      const input = h("input", { name: "word", maxLength: 40, autocomplete: "off", enterKeyHint: "send", placeholder: "Your word", ariaLabel: "Your word" });
-      return [h("form",
-        { onsubmit: (event) => {
-            event.preventDefault();
-            const text = input.value.trim();
-            if (text) answer(p, "word", { text }, text);
-          } },
-        input,
-        h("button", { className: "send", disabled: !online }, "Send"),
-      )];
-    }
-
-    function renderCloud(p) {
-      const most = Math.max(1, ...p.words.map(([, n]) => n));
-      return [...p.words]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([word, n]) => h("span", { style: `font-size:${0.9 + (1.6 * n) / most}rem` }, word));
-    }
-
-    // The deck sets how long one person waits between reactions, and the server holds
-    // everyone to it. The bar sits that time out rather than pretend a tap was sent. The
-    // moment is remembered across reloads, because the server remembers the person too.
-    let coolUntil = stored("poll-cool-until") ?? 0;
-    let coolTimer;
-    function cool() {
-      const bar = document.getElementById("reactions");
-      const wait = coolUntil - Date.now();
-      for (const button of bar.children) button.disabled = wait > 0;
-      bar.classList.remove("cooling");
-      clearTimeout(coolTimer);
-      if (wait <= 0) return;
-      bar.style.setProperty("--wait", `${wait}ms`);
-      void bar.offsetWidth; // restart the line
-      bar.classList.add("cooling");
-      coolTimer = setTimeout(cool, wait);
-    }
-
-    function renderReactions(online) {
-      const bar = document.getElementById("reactions");
-      bar.hidden = !online || !state.reactions.length;
-      patch(bar, state.reactions, () =>
-        state.reactions.map((emoji) => {
-          const button = h("button", { ariaLabel: `React with ${emoji}` }, emoji);
-          button.onclick = () => {
-            if (Date.now() < coolUntil || ws.readyState !== WebSocket.OPEN) return;
-            ws.send(JSON.stringify({ type: "react", emoji }));
-            coolUntil = stored("poll-cool-until", Date.now() + state.cooldown);
-            button.classList.remove("sent");
-            void button.offsetWidth; // restart the animation on a quick second tap
-            button.classList.add("sent");
-            cool();
-          };
-          return button;
-        }),
-      );
-      cool();
-    }
-
-    function render() {
-      const online = ws.readyState === WebSocket.OPEN;
-      const offline = document.getElementById("offline");
-      offline.hidden = online;
-      offline.textContent = state.type ? "Connection lost. Reconnecting…" : "Connecting…";
-
-      // What is on the presenter's screen now, plus anything still open from an earlier slide.
-      const visible = state.polls.filter((p) => state.visible.includes(p.id) || p.state === "open");
-      renderReactions(online);
-      const root = document.getElementById("polls");
-      root.className = visible.length ? "" : "empty";
-      if (!visible.length) {
-        return patch(root, "empty", () => [
-          h("h1", {}, "No poll right now"),
-          h("p", { className: "hint" }, "Keep this page open. The next poll shows up here by itself."),
-        ]);
-      }
-
-      patch(root, visible.map((p) => p.id), () =>
-        visible.map((p) => h("section", { id: `poll-${p.id}` }, h("h1", {}, p.question), h("p", { className: "hint" }), h("div", { className: "answer" }), h("div", { className: "cloud" }))),
-      );
-      for (const p of visible) {
-        const [, hintEl, answerEl, cloudEl] = document.getElementById(`poll-${p.id}`).children;
-        const answered = mine(p);
-        hintEl.textContent = hint(p, answered);
-        if (p.options) {
-          answerEl.className = "answer options";
-          patch(answerEl, [p, answered, online], () => renderOptions(p, answered, online));
-        } else {
-          patch(answerEl, [p.state, p.round, answered, online], () => renderWordForm(p, answered, online));
-          patch(cloudEl, p.words, () => renderCloud(p));
-        }
-      }
-    }
-
-    connect();
-    render();
-  </script>
+  <!--script-->
 </body>
 </html>

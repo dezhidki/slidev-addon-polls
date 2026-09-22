@@ -5,6 +5,8 @@ audience scans a QR code and answers on their phones. The slide updates as they 
 
 No extra server: the poll backend runs inside Slidev's own dev server.
 
+> Written by Claude (Anthropic) under human review — see [How it is put together](#how-it-is-put-together).
+
 ## Quick start
 
 1. Install from GitHub (not on npm yet):
@@ -162,13 +164,19 @@ the code keeps its full size and the poll makes room for it.
 To stay readable at that size, the code uses the lowest error-correction level and an
 upper-case scheme and host (QR codes store capitals more densely).
 
-Adjust it in your deck's `style.css`:
+Size one poll's code with the `qrSize` prop:
 
-| Variable          | Does                  | Default |
-| ----------------- | --------------------- | ------- |
-| `--poll-qr-size`  | Maximum size          | `140px` |
-| `--poll-qr-top`   | Distance from the top | `12px`  |
-| `--poll-qr-right` | Distance from right   | `32px`  |
+```md
+<Poll question="Tabs or spaces?" :options="['Tabs', 'Spaces']" qr-size="180px" />
+```
+
+Or set the defaults for the whole deck in its `style.css`:
+
+| Variable          | Does                                  | Default |
+| ----------------- | ------------------------------------- | ------- |
+| `--poll-qr-size`  | Its size, capped by the title's band  | `140px` |
+| `--poll-qr-top`   | Distance from the top                 | `12px`  |
+| `--poll-qr-right` | Distance from right                   | `32px`  |
 
 ## PDF export
 
@@ -184,23 +192,64 @@ has no poll backend, though, so:
 1. Run the standalone backend:
 
    ```bash
-   PORT=3031 TOKEN=your-remote-password node node_modules/slidev-addon-polls/server/standalone.js
+   PORT=3031 TOKEN=your-remote-password node node_modules/slidev-addon-polls/server/standalone.ts
    ```
 
+   The server is TypeScript that Node runs as it stands (v22.18+ or v23.6+). On an older
+   Node, add `--experimental-strip-types`.
+
 2. Proxy `<deck url>/polls` to it, including WebSocket upgrades.
+
+## How it is put together
+
+Three sides speak one protocol, and [`protocol.ts`](protocol.ts) is all of it: the message
+types, and the parsers that turn a JSON string into one of them or into nothing. Both
+directions are parsed, so nothing downstream re-checks a field.
+
+| File                 | Runs in                | Does                                       |
+| -------------------- | ---------------------- | ------------------------------------------ |
+| `protocol.ts`        | everywhere             | Message types, limits, parsing             |
+| `client.ts`          | the deck               | One socket per tab, the reactive state     |
+| `components/*.vue`   | the deck               | The polls on the slides                    |
+| `server/polls.ts`    | Slidev's dev server    | All poll state, in memory                  |
+| `server/vote.ts`     | the phones             | The voting page, driven by Alpine          |
+
+The voting page is built into one self-contained `dist/vote.html` — Alpine and the page's
+own code inlined, no CDN and no second request — because the phones are on the venue's
+wifi and not necessarily on the internet.
 
 ## Development
 
 ```bash
-npm install
-npm run dev   # demo deck with --remote
-npm test      # the server's test
+npm install     # also builds the voting page
+npm run build   # rebuild dist/vote.html after changing server/vote.*
+npm run dev     # demo deck with --remote (builds first)
+npm test        # the protocol's parsers and the server
+npm run typecheck
+npm run lint
+```
+
+`npm run typecheck` covers the TypeScript modules. The `.vue` components need `vue-tsc`,
+which also reports errors from `@slidev/client`'s own sources, so filter them out:
+
+```bash
+npx vue-tsc --noEmit --pretty false | grep -v '^node_modules/'
 ```
 
 **New layer file never shows up?** (`global-top.vue`, `slide-top.vue`, …) Vite serves
 Slidev's list of layer files as immutable, so a browser that loaded the deck before the
 file existed keeps the old list, even across server restarts. Hard-reload once
 (Ctrl/Cmd+Shift+R, or tick "Disable cache" in DevTools).
+
+## Upgrading from 0.3
+
+Nothing to change in a deck. For anyone running the standalone backend or importing the
+addon's modules:
+
+- `server/standalone.js` and `server/polls.js` are now `.ts`, run directly by Node.
+- `client.ts` exports one `polls` object: `polls.state.*` for what the server says,
+  `polls.send/sync/define/show` for saying something back.
+- The wire protocol moved to `protocol.ts`, and `define` now carries every poll at once.
 
 ## Upgrading from 0.2
 
