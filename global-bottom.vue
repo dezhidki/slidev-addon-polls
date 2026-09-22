@@ -7,24 +7,14 @@
  * `false` turns them off, a list replaces the emoji, anything else means the default set.
  * `reactionCooldown:` — seconds one person waits between reactions — works the same way.
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import { useNav } from "@slidev/client";
 import { watchEffect } from "vue";
-import { pollConfig, polls } from "./client";
+import { type PollConfig, pollConfig, polls } from "./client";
 
 const DEFAULT_REACTIONS = ["👍", "👎", "🤔", "❤️"];
-
-/** The two frontmatter keys this addon reads off a single slide. */
-interface SlideFrontmatter {
-  reactions?: unknown;
-  reactionCooldown?: number;
-}
-
-/** Slidev leaves `route.meta.slide` untyped, so this names the one corner we read. */
-interface SlideMeta {
-  slide?: { frontmatter?: SlideFrontmatter };
-}
 
 const { isPresenter, currentPage, currentSlideRoute } = useNav();
 
@@ -37,8 +27,10 @@ function reactionsFor(setting: unknown): string[] {
 }
 
 watchEffect(() => {
-  const meta = currentSlideRoute.value?.meta as SlideMeta | undefined;
-  const slide = meta?.slide?.frontmatter ?? {};
+  // Slidev leaves `route.meta.slide` untyped here. A slide's frontmatter takes the same
+  // keys as the deck's headmatter.
+  const info = currentSlideRoute.value?.meta.slide as { frontmatter?: PollConfig } | undefined;
+  const slide = info?.frontmatter ?? {};
   polls.sync(
     isPresenter.value,
     currentPage.value,

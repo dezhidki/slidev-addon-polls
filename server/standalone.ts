@@ -7,7 +7,8 @@
  * Node runs the TypeScript directly (v22.18+ or v23.6+); on older versions add
  * `--experimental-strip-types`.
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import { createServer } from "node:http";
 import { attachPolls } from "./polls.ts";

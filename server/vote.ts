@@ -6,7 +6,8 @@
  * second request — because the phones are on the venue's wifi, not necessarily on the
  * internet.
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import Alpine from "alpinejs";
 import {

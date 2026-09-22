@@ -5,7 +5,8 @@
  *
  *     npm test
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";

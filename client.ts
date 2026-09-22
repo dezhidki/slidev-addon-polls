@@ -5,7 +5,8 @@
  * Only the presenter's screen commands the server. Every other view — the slide view, the
  * next-slide preview, a second laptop — connects as a `display` and only listens.
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import { reactive } from "vue";
 import configs from "#slidev/configs";
@@ -39,14 +40,6 @@ interface MountedPoll {
   onScreen: number;
 }
 
-/** A burst of reactions. `seq` counts bursts, so a watcher fires on every one of them. */
-export interface ReactionBurst {
-  /** Increases by one per burst; the burst itself may well repeat. */
-  seq: number;
-  /** How many of each emoji arrived since the last burst, e.g. `{ "❤️": 3 }`. */
-  counts: Tally;
-}
-
 /** What the deck knows about the poll server. Every component renders from this. */
 export interface PollsState {
   /** Whether the poll server has answered this tab. */
@@ -61,8 +54,9 @@ export interface PollsState {
   byId: Record<string, PollView>;
   /** Reactions on the presenter's current slide so far, e.g. `{ "👍": 12 }`. */
   tally: Tally;
-  /** The latest burst, for the emoji that float up the side of the slide. */
-  burst: ReactionBurst;
+  /** The latest burst, for the emoji that float up the side of the slide. A fresh object
+   * every time, so a watcher fires even when the same emoji arrives twice. */
+  burst: Tally;
 }
 
 /**
@@ -78,7 +72,7 @@ class PollsClient {
     joinUrl: "",
     byId: {},
     tally: {},
-    burst: { seq: 0, counts: {} },
+    burst: {},
   });
 
   #socket: WebSocket | undefined;
@@ -211,7 +205,7 @@ class PollsClient {
     }
     if (msg.type === "reactions") {
       this.state.tally = msg.tally;
-      this.state.burst = { seq: this.state.burst.seq + 1, counts: msg.burst };
+      this.state.burst = msg.burst;
       return;
     }
     this.state.connected = true;

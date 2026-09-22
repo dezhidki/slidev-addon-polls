@@ -3,7 +3,8 @@
  * TypeScript inlined, no CDN and no second request, because the phones are on the venue's
  * wifi and not necessarily on the internet.
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { build } from "esbuild";

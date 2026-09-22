@@ -3,7 +3,8 @@
  * presenter password is whatever was passed to `slidev --remote=<password>`. Also serves
  * the voting page, and ships it with `slidev build`.
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import { readFileSync } from "node:fs";
 import type { ResolvedSlidevOptions } from "@slidev/types";

@@ -6,7 +6,8 @@
  * Nothing here checks the shape of what it is sent: `parseClientMessage` in `../protocol.ts`
  * has already done that, so every handler below is about the game, not about the wire.
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";

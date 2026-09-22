@@ -7,7 +7,8 @@
  * `undefined`. What comes out is the shape it claims to be, so neither side has to
  * re-check fields as it goes.
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import * as v from "valibot";
 
@@ -98,44 +99,44 @@ const MAX_COOLDOWN = 3600;
 const text = (max = 2048) => v.pipe(v.string(), v.maxLength(max));
 
 /** A poll id. Empty is the one string that would collide with every other empty one. */
-const id = () => v.pipe(v.string(), v.nonEmpty(), v.maxLength(2048));
+const pollId = v.pipe(v.string(), v.nonEmpty(), v.maxLength(2048));
 
 /** A count or an index: a whole number, never negative. */
-const count = () => v.pipe(v.number(), v.integer(), v.minValue(0));
+const count = v.pipe(v.number(), v.integer(), v.minValue(0));
 
 const PhaseSchema = v.picklist(["idle", "open", "closed"] satisfies Phase[]);
-const TallySchema = v.record(text(MAX_EMOJI), count());
+const TallySchema = v.record(text(MAX_EMOJI), count);
 
 // The schemas below describe the two types above. A drift between them is a compile
 // error where the parsed output meets them: `define()` in server/polls.ts, `byId` in
 // client.ts.
 const PollDefSchema = v.object({
-  id: id(),
-  slide: v.optional(count(), 0),
+  id: pollId,
+  slide: v.optional(count, 0),
   question: text(),
   options: v.optional(v.array(text())),
-  correct: v.optional(count()),
+  correct: v.optional(count),
 });
 
 const PollViewSchema = v.object({
-  id: id(),
-  slide: count(),
+  id: pollId,
+  slide: count,
   question: text(),
   options: v.nullable(v.array(text())),
   quiz: v.boolean(),
   state: PhaseSchema,
   revealed: v.boolean(),
-  round: count(),
-  total: count(),
-  votes: v.nullable(v.array(count())),
-  words: v.array(v.tuple([text(MAX_WORD), count()])),
-  correct: v.nullable(count()),
+  round: count,
+  total: count,
+  votes: v.nullable(v.array(count)),
+  words: v.array(v.tuple([text(MAX_WORD), count])),
+  correct: v.nullable(count),
 });
 
 /** The presenter's four controls for one poll: they differ only in which one it is. */
 const ControlMessageSchema = v.object({
   type: v.picklist(["open", "close", "reveal", "reset"]),
-  id: id(),
+  id: pollId,
 });
 
 const ClientMessageSchema = v.variant("type", [
@@ -151,8 +152,8 @@ const ClientMessageSchema = v.variant("type", [
   /** The presenter's screen saying what it shows now, and which reactions it takes. */
   v.object({
     type: v.literal("slide"),
-    slide: count(),
-    ids: v.array(id()),
+    slide: count,
+    ids: v.array(pollId),
     reactions: v.array(text(MAX_EMOJI)),
     /** Seconds. Out of range is pulled into range rather than dropping the message. */
     cooldown: v.optional(
@@ -164,11 +165,11 @@ const ClientMessageSchema = v.variant("type", [
   }),
   ControlMessageSchema,
   /** Presenter moderation: drop a word from a cloud and keep it out. */
-  v.object({ type: v.literal("remove"), id: id(), word: text(MAX_WORD) }),
+  v.object({ type: v.literal("remove"), id: pollId, word: text(MAX_WORD) }),
   /** A phone answering a choice poll or a quiz. */
-  v.object({ type: v.literal("vote"), id: id(), option: count() }),
+  v.object({ type: v.literal("vote"), id: pollId, option: count }),
   /** A phone answering a word cloud; the server trims and cuts it down to size. */
-  v.object({ type: v.literal("word"), id: id(), text: text(MAX_WORD * 4) }),
+  v.object({ type: v.literal("word"), id: pollId, text: text(MAX_WORD * 4) }),
   /** A phone tapping an emoji. */
   v.object({ type: v.literal("react"), emoji: text(MAX_EMOJI) }),
 ]);
@@ -179,15 +180,15 @@ const ServerMessageSchema = v.variant("type", [
   /** The whole picture, re-sent (coalesced) whenever anything changes. */
   v.object({
     type: v.literal("state"),
-    slide: count(),
+    slide: count,
     /** Poll ids on the presenter's screen right now. */
-    visible: v.array(id()),
+    visible: v.array(pollId),
     reactions: v.array(text(MAX_EMOJI)),
     /** Milliseconds one person waits between two reactions. */
-    cooldown: count(),
+    cooldown: count,
     tally: TallySchema,
     /** Phones connected right now. */
-    audience: count(),
+    audience: count,
     /** Where phones should go to vote, if the server can work it out. */
     joinUrl: v.optional(text()),
     polls: v.array(PollViewSchema),

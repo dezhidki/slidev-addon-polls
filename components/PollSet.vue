@@ -11,7 +11,8 @@
  * In PDF export all of them are printed under each other (with `--with-clicks`: one per
  * page).
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import { useNav, useSlideContext } from "@slidev/client";
 import { onMounted, onUnmounted, ref, watchEffect } from "vue";
