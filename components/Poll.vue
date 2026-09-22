@@ -14,7 +14,8 @@
  * `qrSize` prop (or `--poll-qr-size`) is its full size; `--poll-qr-top` / `--poll-qr-right`
  * move it. In PDF export only the question and its options are printed.
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import { useNav, useSlideContext } from "@slidev/client";
 import { computed, onMounted, onUnmounted, ref, watchEffect } from "vue";

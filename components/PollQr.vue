@@ -8,7 +8,8 @@
  * Address, first match wins: the `url` prop, `pollUrl` in the headmatter, the page's own
  * origin — or the dev server's LAN address while you are browsing on localhost.
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import QRCode from "qrcode";
 import { computed, ref, watchEffect } from "vue";

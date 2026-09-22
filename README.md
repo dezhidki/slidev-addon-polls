@@ -5,7 +5,7 @@ audience scans a QR code and answers on their phones. The slide updates as they 
 
 No extra server: the poll backend runs inside Slidev's own dev server.
 
-> Written by Claude (Anthropic) under human review — see [How it is put together](#how-it-is-put-together).
+> @author Claude · @author Denis Zhidkikh — see [How it is put together](#how-it-is-put-together).
 
 ## Quick start
 

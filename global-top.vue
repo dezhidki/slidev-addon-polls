@@ -9,7 +9,8 @@
  *     reactions: false                 # off
  *     reactions: ["👏", "😮", "❓"]     # your own set
  *
- * @author Written by Claude (Anthropic) under human review.
+ * @author Claude
+ * @author Denis Zhidkikh
  */
 import { useNav } from "@slidev/client";
 import { ref, watch } from "vue";
@@ -66,11 +67,8 @@ function float(counts: Tally): void {
   }
 }
 
-// `seq` counts bursts, so this fires again even when the same emoji arrives twice.
-watch(
-  () => polls.state.burst.seq,
-  () => float(polls.state.burst.counts),
-);
+// A fresh object per burst, so this fires again even when the same emoji arrives twice.
+watch(() => polls.state.burst, float);
 
 const land = (id: number) => {
   floaters.value = floaters.value.filter((floater) => floater.id !== id);
