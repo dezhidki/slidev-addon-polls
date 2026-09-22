@@ -15,16 +15,11 @@
  */
 import { useNav, useSlideContext } from "@slidev/client";
 import { onMounted, onUnmounted, ref, watchEffect } from "vue";
+import type { PollDef } from "../protocol.ts";
 import Poll from "./Poll.vue";
 
-/** One question of the set. The same three props `<Poll>` takes. */
-interface SetMember {
-  question: string;
-  options?: string[];
-  correct?: number;
-}
-
-const props = defineProps<{ polls: SetMember[] }>();
+/** One question of the set: a poll without the id and slide that `<Poll>` works out. */
+const props = defineProps<{ polls: Omit<PollDef, "id" | "slide">[] }>();
 
 const { isPrintMode, isPrintWithClicks } = useNav();
 const { $clicksContext } = useSlideContext();

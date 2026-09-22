@@ -30,31 +30,34 @@ interface Answer {
   answer: number | string;
 }
 
-/** localStorage can throw (private mode, blocked cookies); then we just forget on reload. */
-const fallback = new Map<string, unknown>();
-function remember<T>(key: string, value?: T): T | undefined {
+// localStorage can throw (private mode, blocked cookies). Everything kept in it is read
+// once at startup and held in memory after that, so a phone that cannot use it simply
+// forgets on reload.
+function load<T>(key: string): T | undefined {
   try {
-    if (value !== undefined) {
-      localStorage.setItem(key, JSON.stringify(value));
-    }
     const raw = localStorage.getItem(key);
     return raw === null ? undefined : (JSON.parse(raw) as T);
   } catch {
-    if (value !== undefined) {
-      fallback.set(key, value);
-    }
-    return fallback.get(key) as T | undefined;
+    return undefined;
+  }
+}
+
+function save(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Nothing to do about it, and nothing depends on it.
   }
 }
 
 /** This phone's id. The server counts one answer per id per round, not per connection. */
 function voterId(): string {
-  const saved = remember<string>("poll-voter");
+  const saved = load<string>("poll-voter");
   if (saved) {
     return saved;
   }
   const fresh = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  remember("poll-voter", fresh);
+  save("poll-voter", fresh);
   return fresh;
 }
 
@@ -91,12 +94,12 @@ Alpine.data("votePage", () => ({
   /** Whether we were ever connected: "Connecting…" reads differently from "lost". */
   everConnected: false,
   state: emptyState(),
-  answers: remember<Record<string, Answer>>("poll-answers") ?? {},
+  answers: load<Record<string, Answer>>("poll-answers") ?? {},
   drafts,
   /** The emoji whose pop animation is running. */
   sent: "",
   /** When this phone may react again. Remembered, because the server remembers it too. */
-  coolUntil: remember<number>("poll-cool-until") ?? 0,
+  coolUntil: load<number>("poll-cool-until") ?? 0,
   /** Read by `cooling` and `wait`; moved on only when a cooldown starts or runs out. */
   now: Date.now(),
 
@@ -193,14 +196,14 @@ Alpine.data("votePage", () => ({
       return;
     }
     this.coolUntil = Date.now() + this.state.cooldown;
-    remember("poll-cool-until", this.coolUntil);
+    save("poll-cool-until", this.coolUntil);
     this.sent = emoji;
     this.tick();
   },
 
   record(poll: PollView, answer: number | string): void {
     this.answers[poll.id] = { round: poll.round, answer };
-    remember("poll-answers", this.answers);
+    save("poll-answers", this.answers);
   },
 
   /** Moves `now` on, now and again when the cooldown runs out. */

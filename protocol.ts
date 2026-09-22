@@ -4,11 +4,12 @@
  *
  * Messages are parsed, never trusted. {@link parseClientMessage} and
  * {@link parseServerMessage} turn a JSON string into one of the unions below, or into
- * `undefined`. What comes out is the shape it claims to be, cut to the limits named here,
- * so neither side has to re-check fields as it goes.
+ * `undefined`. What comes out is the shape it claims to be, so neither side has to
+ * re-check fields as it goes.
  *
  * @author Written by Claude (Anthropic) under human review.
  */
+import * as v from "valibot";
 
 /** Who is on the other end of a socket. Only a presenter may command the server. */
 export type Role = "presenter" | "display" | "audience";
@@ -63,51 +64,6 @@ export interface PollView {
   correct: number | null;
 }
 
-/** The presenter's four controls for one poll: they differ only in which one it is. */
-export type ControlMessage = { type: "open" | "close" | "reveal" | "reset"; id: string };
-
-/** Everything a deck or a phone may say to the poll server. */
-export type ClientMessage =
-  /** First message on every socket: who is connecting, and with what password. */
-  | { type: "hello"; role: Role; token?: string; voter?: string }
-  /** The presenter's screen declaring the polls it knows about. */
-  | { type: "define"; polls: PollDef[] }
-  /** The presenter's screen saying what it shows now, and which reactions it takes. */
-  | { type: "slide"; slide: number; ids: string[]; reactions: string[]; cooldown?: number }
-  /** Presenter controls for one poll. */
-  | ControlMessage
-  /** Presenter moderation: drop a word from a cloud and keep it out. */
-  | { type: "remove"; id: string; word: string }
-  /** A phone answering a choice poll or a quiz. */
-  | { type: "vote"; id: string; option: number }
-  /** A phone answering a word cloud. */
-  | { type: "word"; id: string; text: string }
-  /** A phone tapping an emoji. */
-  | { type: "react"; emoji: string };
-
-/** Everything the poll server says back. */
-export type ServerMessage =
-  /** The presenter password was wrong; this socket stays a plain display. */
-  | { type: "denied" }
-  /** The whole picture, re-sent (coalesced) whenever anything changes. */
-  | {
-      type: "state";
-      slide: number;
-      /** Poll ids on the presenter's screen right now. */
-      visible: string[];
-      reactions: string[];
-      /** Milliseconds one person waits between two reactions. */
-      cooldown: number;
-      tally: Tally;
-      /** Phones connected right now. */
-      audience: number;
-      /** Where phones should go to vote, if the server can work it out. */
-      joinUrl?: string;
-      polls: PollView[];
-    }
-  /** Reactions since the last burst, for the emoji that float up the slide. */
-  | { type: "reactions"; burst: Tally; tally: Tally };
-
 /** Message types only a presenter may send; everyone else's are dropped. */
 export const PRESENTER_ONLY: ReadonlySet<ClientMessage["type"]> = new Set([
   "define",
@@ -122,240 +78,143 @@ export const PRESENTER_ONLY: ReadonlySet<ClientMessage["type"]> = new Set([
 /** Seconds between two reactions from one person, unless the deck says otherwise. */
 export const DEFAULT_COOLDOWN = 3;
 
-const ROLES: readonly Role[] = ["presenter", "display", "audience"];
-const PHASES: readonly Phase[] = ["idle", "open", "closed"];
-
-const MAX_ID = 300;
-const MAX_QUESTION = 300;
-const MAX_OPTION = 200;
-const MAX_OPTIONS = 12;
 /** Longest word a cloud keeps; the server trims and cuts what it is sent to this. */
 export const MAX_WORD = 40;
-const MAX_EMOJI = 16;
-const MAX_REACTIONS = 8;
-const MAX_VISIBLE = 50;
+/** Longest voter id, which the server keeps one of per person who has answered. */
 const MAX_VOTER = 64;
-const MAX_TOKEN = 200;
-const MAX_URL = 2048;
-const MAX_SLIDE = 10_000;
-const MAX_DEFINES = 200;
+/** Longest emoji, which the server counts one of per reaction on a slide. */
+const MAX_EMOJI = 16;
+/** Most seconds a deck may ask people to wait between reactions. */
 const MAX_COOLDOWN = 3600;
-const COUNT = Number.MAX_SAFE_INTEGER;
 
-// ---------------------------------------------------------------------------------------
-// The handful of checks everything above is built from. Each one answers the same way: the
-// value as the type it claims to be, or `undefined`.
-// ---------------------------------------------------------------------------------------
+/**
+ * A string. The default cap is generous because only the three limits above are held in
+ * memory per person or per word — the rest is the presenter's own text, and the socket's
+ * 16 kB payload limit already bounds a message as a whole.
+ *
+ * Empty is allowed on purpose: an empty option label is an authoring slip, and refusing
+ * the message over one would take every other poll on the slide down with it.
+ */
+const text = (max = 2048) => v.pipe(v.string(), v.maxLength(max));
 
-/** A non-empty string of at most `max` characters. */
-function text(value: unknown, max: number): string | undefined {
-  return typeof value === "string" && value.length > 0 && value.length <= max ? value : undefined;
-}
+/** A poll id. Empty is the one string that would collide with every other empty one. */
+const id = () => v.pipe(v.string(), v.nonEmpty(), v.maxLength(2048));
 
-/** A whole number within `[min, max]`. */
-function whole(value: unknown, min: number, max: number): number | undefined {
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    return undefined;
-  }
-  return value >= min && value <= max ? value : undefined;
-}
+/** A count or an index: a whole number, never negative. */
+const count = () => v.pipe(v.number(), v.integer(), v.minValue(0));
 
-/** One of `allowed`. */
-function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
-  return typeof value === "string" && (allowed as readonly string[]).includes(value)
-    ? (value as T)
-    : undefined;
-}
+const PhaseSchema = v.picklist(["idle", "open", "closed"] satisfies Phase[]);
+const TallySchema = v.record(text(MAX_EMOJI), count());
 
-/** The strings in a list that fit, at most `count` of them. Anything else drops out. */
-function texts(value: unknown, max: number, count: number): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const fits = (item: unknown): item is string => typeof item === "string" && item.length <= max;
-  return value.filter(fits).slice(0, count);
-}
+// The schemas below describe the two types above. A drift between them is a compile
+// error where the parsed output meets them: `define()` in server/polls.ts, `byId` in
+// client.ts.
+const PollDefSchema = v.object({
+  id: id(),
+  slide: v.optional(count(), 0),
+  question: text(),
+  options: v.optional(v.array(text())),
+  correct: v.optional(count()),
+});
 
-/** A plain object whose fields can be read one by one. Arrays and `null` are not. */
-function fields(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return undefined;
-  }
-  return value as Record<string, unknown>;
-}
+const PollViewSchema = v.object({
+  id: id(),
+  slide: count(),
+  question: text(),
+  options: v.nullable(v.array(text())),
+  quiz: v.boolean(),
+  state: PhaseSchema,
+  revealed: v.boolean(),
+  round: count(),
+  total: count(),
+  votes: v.nullable(v.array(count())),
+  words: v.array(v.tuple([text(MAX_WORD), count()])),
+  correct: v.nullable(count()),
+});
 
-function json(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-}
+/** The presenter's four controls for one poll: they differ only in which one it is. */
+const ControlMessageSchema = v.object({
+  type: v.picklist(["open", "close", "reveal", "reset"]),
+  id: id(),
+});
 
-/** `Object.fromEntries`, so that a key like `__proto__` lands as an ordinary field. */
-function parseTally(value: unknown): Tally {
-  const raw = fields(value);
-  if (!raw) {
-    return {};
-  }
-  return Object.fromEntries(
-    Object.entries(raw).flatMap(([emoji, count]) => {
-      const n = whole(count, 0, COUNT);
-      return emoji.length <= MAX_EMOJI && n !== undefined ? [[emoji, n] as const] : [];
-    }),
-  );
-}
+const ClientMessageSchema = v.variant("type", [
+  /** First message on every socket: who is connecting, and with what password. */
+  v.object({
+    type: v.literal("hello"),
+    role: v.optional(v.picklist(["presenter", "display", "audience"] satisfies Role[]), "audience"),
+    token: v.optional(text()),
+    voter: v.optional(text(MAX_VOTER)),
+  }),
+  /** The presenter's screen declaring every poll it knows about. */
+  v.object({ type: v.literal("define"), polls: v.array(PollDefSchema) }),
+  /** The presenter's screen saying what it shows now, and which reactions it takes. */
+  v.object({
+    type: v.literal("slide"),
+    slide: count(),
+    ids: v.array(id()),
+    reactions: v.array(text(MAX_EMOJI)),
+    /** Seconds. Out of range is pulled into range rather than dropping the message. */
+    cooldown: v.optional(
+      v.pipe(
+        v.number(),
+        v.transform((seconds) => Math.min(Math.max(seconds, 0), MAX_COOLDOWN)),
+      ),
+    ),
+  }),
+  ControlMessageSchema,
+  /** Presenter moderation: drop a word from a cloud and keep it out. */
+  v.object({ type: v.literal("remove"), id: id(), word: text(MAX_WORD) }),
+  /** A phone answering a choice poll or a quiz. */
+  v.object({ type: v.literal("vote"), id: id(), option: count() }),
+  /** A phone answering a word cloud; the server trims and cuts it down to size. */
+  v.object({ type: v.literal("word"), id: id(), text: text(MAX_WORD * 4) }),
+  /** A phone tapping an emoji. */
+  v.object({ type: v.literal("react"), emoji: text(MAX_EMOJI) }),
+]);
 
-function parseWords(value: unknown): WordCount[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((entry) => {
-    if (!Array.isArray(entry)) {
-      return [];
-    }
-    const word = text(entry[0], MAX_WORD);
-    const count = whole(entry[1], 0, COUNT);
-    return word !== undefined && count !== undefined ? [[word, count] as WordCount] : [];
-  });
-}
+const ServerMessageSchema = v.variant("type", [
+  /** The presenter password was wrong; this socket stays a plain display. */
+  v.object({ type: v.literal("denied") }),
+  /** The whole picture, re-sent (coalesced) whenever anything changes. */
+  v.object({
+    type: v.literal("state"),
+    slide: count(),
+    /** Poll ids on the presenter's screen right now. */
+    visible: v.array(id()),
+    reactions: v.array(text(MAX_EMOJI)),
+    /** Milliseconds one person waits between two reactions. */
+    cooldown: count(),
+    tally: TallySchema,
+    /** Phones connected right now. */
+    audience: count(),
+    /** Where phones should go to vote, if the server can work it out. */
+    joinUrl: v.optional(text()),
+    polls: v.array(PollViewSchema),
+  }),
+  /** Reactions since the last burst, for the emoji that float up the slide. */
+  v.object({ type: v.literal("reactions"), burst: TallySchema, tally: TallySchema }),
+]);
 
-/** A poll the deck declared. Without an id and a question there is nothing to poll. */
-export function parsePollDef(value: unknown): PollDef | undefined {
-  const raw = fields(value);
-  if (!raw) {
-    return undefined;
-  }
-  const id = text(raw.id, MAX_ID);
-  const question = text(raw.question, MAX_QUESTION);
-  if (id === undefined || question === undefined) {
-    return undefined;
-  }
-  const listed = Array.isArray(raw.options) ? texts(raw.options, MAX_OPTION, MAX_OPTIONS) : [];
-  const options = listed.length > 0 ? listed : undefined;
-  return {
-    id,
-    slide: whole(raw.slide, 0, MAX_SLIDE) ?? 0,
-    question,
-    options,
-    correct: options && whole(raw.correct, 0, options.length - 1),
-  };
-}
+export type ControlMessage = v.InferOutput<typeof ControlMessageSchema>;
 
-function parsePollView(value: unknown): PollView | undefined {
-  const raw = fields(value);
-  if (!raw) {
-    return undefined;
-  }
-  const id = text(raw.id, MAX_ID);
-  const question = text(raw.question, MAX_QUESTION);
-  const state = oneOf(raw.state, PHASES);
-  if (id === undefined || question === undefined || state === undefined) {
-    return undefined;
-  }
-  const listed = Array.isArray(raw.options) ? texts(raw.options, MAX_OPTION, MAX_OPTIONS) : [];
-  const options = listed.length > 0 ? listed : null;
-  return {
-    id,
-    slide: whole(raw.slide, 0, MAX_SLIDE) ?? 0,
-    question,
-    options,
-    quiz: raw.quiz === true,
-    state,
-    revealed: raw.revealed === true,
-    round: whole(raw.round, 0, COUNT) ?? 0,
-    total: whole(raw.total, 0, COUNT) ?? 0,
-    votes: Array.isArray(raw.votes) ? raw.votes.map((n) => whole(n, 0, COUNT) ?? 0) : null,
-    words: parseWords(raw.words),
-    correct: (options && whole(raw.correct, 0, options.length - 1)) ?? null,
-  };
-}
+/** Everything a deck or a phone may say to the poll server. */
+export type ClientMessage = v.InferOutput<typeof ClientMessageSchema>;
+
+/** Everything the poll server says back. */
+export type ServerMessage = v.InferOutput<typeof ServerMessageSchema>;
+
+const ClientWire = v.pipe(v.string(), v.parseJson(), ClientMessageSchema);
+const ServerWire = v.pipe(v.string(), v.parseJson(), ServerMessageSchema);
 
 /** Parses one message from a deck or a phone. Anything unrecognised is `undefined`. */
 export function parseClientMessage(raw: string): ClientMessage | undefined {
-  const msg = fields(json(raw));
-  const type = msg?.type;
-  if (!msg || typeof type !== "string") {
-    return undefined;
-  }
-  const id = text(msg.id, MAX_ID);
-  switch (type) {
-    case "hello":
-      return {
-        type,
-        role: oneOf(msg.role, ROLES) ?? "audience",
-        token: text(msg.token, MAX_TOKEN),
-        voter: text(msg.voter, MAX_VOTER),
-      };
-    case "define": {
-      const polls = Array.isArray(msg.polls)
-        ? msg.polls.flatMap((poll) => parsePollDef(poll) ?? []).slice(0, MAX_DEFINES)
-        : [];
-      return polls.length > 0 ? { type, polls } : undefined;
-    }
-    case "slide":
-      return {
-        type,
-        slide: whole(msg.slide, 0, MAX_SLIDE) ?? 0,
-        ids: texts(msg.ids, MAX_ID, MAX_VISIBLE),
-        reactions: texts(msg.reactions, MAX_EMOJI, MAX_REACTIONS),
-        cooldown:
-          typeof msg.cooldown === "number" && Number.isFinite(msg.cooldown)
-            ? Math.min(Math.max(msg.cooldown, 0), MAX_COOLDOWN)
-            : undefined,
-      };
-    case "open":
-    case "close":
-    case "reveal":
-    case "reset":
-      return id === undefined ? undefined : { type, id };
-    case "remove": {
-      const word = text(msg.word, MAX_WORD);
-      return id === undefined || word === undefined ? undefined : { type, id, word };
-    }
-    case "vote": {
-      const option = whole(msg.option, 0, MAX_OPTIONS - 1);
-      return id === undefined || option === undefined ? undefined : { type, id, option };
-    }
-    case "word": {
-      // Longer than a word on purpose: the server trims and cuts it down to size itself.
-      const spoken = text(msg.text, MAX_WORD * 4);
-      return id === undefined || spoken === undefined ? undefined : { type, id, text: spoken };
-    }
-    case "react": {
-      const emoji = text(msg.emoji, MAX_EMOJI);
-      return emoji === undefined ? undefined : { type, emoji };
-    }
-    default:
-      return undefined;
-  }
+  const result = v.safeParse(ClientWire, raw);
+  return result.success ? result.output : undefined;
 }
 
 /** Parses one message from the poll server. Anything unrecognised is `undefined`. */
 export function parseServerMessage(raw: string): ServerMessage | undefined {
-  const msg = fields(json(raw));
-  const type = msg?.type;
-  if (!msg || typeof type !== "string") {
-    return undefined;
-  }
-  switch (type) {
-    case "denied":
-      return { type };
-    case "state":
-      return {
-        type,
-        slide: whole(msg.slide, 0, MAX_SLIDE) ?? 0,
-        visible: texts(msg.visible, MAX_ID, MAX_VISIBLE),
-        reactions: texts(msg.reactions, MAX_EMOJI, MAX_REACTIONS),
-        cooldown: whole(msg.cooldown, 0, MAX_COOLDOWN * 1000) ?? DEFAULT_COOLDOWN * 1000,
-        tally: parseTally(msg.tally),
-        audience: whole(msg.audience, 0, COUNT) ?? 0,
-        joinUrl: text(msg.joinUrl, MAX_URL),
-        polls: Array.isArray(msg.polls) ? msg.polls.flatMap((p) => parsePollView(p) ?? []) : [],
-      };
-    case "reactions":
-      return { type, burst: parseTally(msg.burst), tally: parseTally(msg.tally) };
-    default:
-      return undefined;
-  }
+  const result = v.safeParse(ServerWire, raw);
+  return result.success ? result.output : undefined;
 }
