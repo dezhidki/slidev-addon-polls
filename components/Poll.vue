@@ -24,6 +24,8 @@ import type { PollView } from "../protocol.ts";
 import PollQr from "./PollQr.vue";
 
 const props = defineProps<{
+  /** Keeps the poll's answers when its slide moves or its question is edited. Unique in the deck. */
+  id?: string;
   question: string;
   /** Absent for a word cloud. */
   options?: string[];
@@ -40,7 +42,7 @@ const props = defineProps<{
 const { $page, $renderContext } = useSlideContext();
 const { isPresenter, isPrintMode } = useNav();
 
-const id = `${$page.value}:${props.question}`;
+const id = props.id ?? `${$page.value}:${props.question}`;
 polls.define({
   id,
   slide: $page.value,
