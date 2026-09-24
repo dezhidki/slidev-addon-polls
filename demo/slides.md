@@ -27,6 +27,16 @@ Run with `npm run dev`, open the presenter view, and open /vote on your phone.
 
 ---
 
+# Choice (hide results)
+
+<Poll
+  question="Which ice cream flavor is the best?"
+  :options="['Chocolate', 'Vanilla', 'Strawberry', 'Stracciatella']"
+  blind
+/>
+
+---
+
 # Quiz
 
 <Poll

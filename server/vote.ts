@@ -152,7 +152,9 @@ Alpine.data("votePage", () => ({
       return answer === undefined ? "Voting is closed." : "Voting is closed. Your answer is in.";
     }
     if (answer !== undefined) {
-      return "Your answer is in.";
+      return poll.blind
+        ? "Your answer is in. Results appear when voting closes."
+        : "Your answer is in.";
     }
     return poll.options ? "Pick one." : "Send one word or a short phrase.";
   },

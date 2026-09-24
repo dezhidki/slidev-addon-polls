@@ -111,6 +111,7 @@ test("a state message arrives whole or not at all", () => {
         question: "open quiz",
         options: ["a"],
         quiz: true,
+        blind: true,
         state: "open",
         revealed: false,
         round: 1,
