@@ -19,8 +19,8 @@ import { onMounted, onUnmounted, ref, watchEffect } from "vue";
 import type { PollDef } from "../protocol.ts";
 import Poll from "./Poll.vue";
 
-/** One question of the set: a poll without the id and slide that `<Poll>` works out. */
-const props = defineProps<{ polls: Omit<PollDef, "id" | "slide">[] }>();
+/** One question of the set: a poll without the slide, and the id only if you want to fix it. */
+const props = defineProps<{ polls: (Omit<PollDef, "id" | "slide"> & { id?: string })[] }>();
 
 const { isPrintMode, isPrintWithClicks } = useNav();
 const { $clicksContext } = useSlideContext();
@@ -43,14 +43,14 @@ onUnmounted(() => $clicksContext.unregister(clicksId));
 
 <template>
   <div v-if="isPrintMode && !isPrintWithClicks">
-    <Poll v-for="poll in polls" :key="poll.question" v-bind="poll" />
+    <Poll v-for="poll in polls" :key="poll.id ?? poll.question" v-bind="poll" />
   </div>
   <!-- All members share one grid cell, the hidden ones merely invisible: the set is always
        as tall as its tallest question, so nothing around it moves when you switch. -->
   <div v-else class="poll-set">
     <Poll
       v-for="(poll, i) in polls"
-      :key="poll.question"
+      :key="poll.id ?? poll.question"
       v-bind="poll"
       :step="[i + 1, polls.length]"
       :hidden="i !== current"
