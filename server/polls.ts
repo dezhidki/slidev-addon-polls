@@ -75,8 +75,6 @@ interface Poll {
   question: string;
   options: string[] | null;
   correct: number | null;
-  /** Fingerprint of question, options and answer key: an unchanged poll keeps its votes. */
-  shape: string;
   state: Phase;
   revealed: boolean;
   round: number;
@@ -147,25 +145,28 @@ export function attachPolls(
     clients.set(socket, { role, voter: msg.voter ?? "" });
   }
 
-  // Re-defining an unchanged poll keeps its votes: Slidev re-mounts slides all the time.
-  // Polls that were renamed or removed stay in the map, harmlessly: phones only show what
-  // `visible` lists. ponytail: they are freed on restart; evict if decks get huge.
+  // Re-defining a poll keeps its votes: Slidev re-mounts slides all the time, and an edited
+  // question or a fixed typo in an option still counts the same answers. Only a different
+  // number of options (or a cloud turned into a choice) starts it afresh. Polls that were
+  // renamed or removed stay in the map, harmlessly: phones only show what `visible` lists.
+  // ponytail: they are freed on restart; evict if decks get huge.
   function define(defs: PollDef[]): void {
     for (const def of defs) {
-      const shape = JSON.stringify([def.question, def.options ?? null, def.correct ?? null]);
-      const old = polls.get(def.id);
-      if (old?.shape === shape) {
-        old.slide = def.slide;
-        continue;
-      }
       const options = def.options ?? null;
-      polls.set(def.id, {
-        id: def.id,
+      const old = polls.get(def.id);
+      const text = {
         slide: def.slide,
         question: def.question,
         options,
         correct: def.correct ?? null,
-        shape,
+      };
+      if (old && old.options?.length === options?.length) {
+        Object.assign(old, text);
+        continue;
+      }
+      polls.set(def.id, {
+        id: def.id,
+        ...text,
         // Starts from the clock, so a restarted server never reuses a round phones remember.
         ...freshRound(options, old?.round ?? Date.now()),
       });

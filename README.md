@@ -50,6 +50,11 @@ No extra server: the poll backend runs inside Slidev's own dev server.
 ```
 
 - **Several polls on one slide:** just add more `<Poll>`s.
+- **Keep answers when you move or edit a poll:** give it an `id`, unique in the deck:
+  `<Poll id="tabs" question="Tabs or spaces?" … />`. Without one, a poll is known by its
+  slide number and question, so inserting a slide before it or rewording its question
+  starts it afresh. Either way, changing the number of options does too. Other edits keep
+  the answers, counted by position: reordering options moves their votes to other options.
 - **Big "join now" QR code:** `<PollQr class="w-60" />` shows only the QR code. Put it on
   an early slide so the back rows can scan it.
 
@@ -94,7 +99,7 @@ answer before you reveal it.
   in the next-slide preview do not count.
 - Any poll that is still open, even on another slide.
 
-A poll you renamed or deleted while editing never shows up.
+A poll you deleted, or renamed without an `id`, never shows up.
 
 ### Where answers are kept
 
