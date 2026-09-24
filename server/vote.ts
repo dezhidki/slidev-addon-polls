@@ -24,7 +24,7 @@ type StateMessage = Extract<ServerMessage, { type: "state" }>;
 /** Milliseconds before a lost connection is tried again. */
 const RETRY_MS = 2000;
 
-/** What this phone has already answered, so a reload doesn't offer it a second go. */
+/** What this phone has answered, so a reload still marks it. */
 interface Answer {
   /** The poll's round when it was answered; a reset bumps the round and frees the phone. */
   round: number;
@@ -152,7 +152,7 @@ Alpine.data("votePage", () => ({
       return answer === undefined ? "Voting is closed." : "Voting is closed. Your answer is in.";
     }
     if (answer !== undefined) {
-      return "Your answer is in.";
+      return "Your answer is in. You can change it while voting is open.";
     }
     return poll.options ? "Pick one." : "Send one word or a short phrase.";
   },

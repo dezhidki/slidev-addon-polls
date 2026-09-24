@@ -38,16 +38,22 @@ No extra server: the poll backend runs inside Slidev's own dev server.
 | Type       | How to write it                      | What the room sees while voting |
 | ---------- | ------------------------------------ | ------------------------------- |
 | Choice     | `options`                            | Bars move live                  |
+| Blind      | `options` + `blind`                  | Only the number of answers      |
 | Quiz       | `options` + `correct` (option index) | Only the number of answers      |
 | Word cloud | no `options`                         | Only the number of answers      |
 
 ```md
 <Poll question="Tabs or spaces?" :options="['Tabs', 'Spaces']" />
+<Poll question="Which talk next?" :options="['Rust', 'Go']" blind />
 <Poll question="What is 2 + 2?" :options="['3', '4', '5']" :correct="1" />
 <Poll question="One word for this lecture so far?" />
 ```
 
 - **Several polls on one slide:** just add more `<Poll>`s.
+- **Keep answers when you move or edit a poll:** give it an `id`, unique in the deck:
+  `<Poll id="tabs" question="Tabs or spaces?" … />`. Without one, a poll is known by its
+  slide number and question, so inserting a slide before it or rewording it starts it
+  afresh. With an `id`, only changing the number of options does.
 - **Big "join now" QR code:** `<PollQr class="w-60" />` shows only the QR code. Put it on
   an early slide so the back rows can scan it.
 
@@ -68,14 +74,14 @@ questions with → and ←, like any other click on the slide. Phones follow alo
 The controls appear under each poll, in presenter mode only:
 
 - **Open voting / Close voting**: phones can answer only while voting is open, once per
-  person.
+  person. Until voting closes they can change their answer, e.g. after a misclick.
 - **Reveal answer** (quiz only): closes voting and marks the right option everywhere.
 - **Reset**: clears the answers. Click it twice within 3 seconds, so a misclick is safe.
 
-### Why quizzes and word clouds hide results
+### Why blind polls, quizzes and word clouds hide results
 
 While voting is open, only you see the answers arriving. Everyone else sees the count.
-This stops a quiz's distribution from steering the vote, and no phone receives the right
+This stops the distribution from steering the vote, and no phone receives the right
 answer before you reveal it.
 
 ### Moderating a word cloud
@@ -92,7 +98,7 @@ answer before you reveal it.
   in the next-slide preview do not count.
 - Any poll that is still open, even on another slide.
 
-A poll you renamed or deleted while editing never shows up.
+A poll you deleted, or renamed without an `id`, never shows up.
 
 ### Where answers are kept
 

@@ -76,7 +76,7 @@ function pollAt(peer: Peer, index: number): PollView {
 /** A pause long enough for the server's coalesced broadcast to land. */
 const after = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-test("a poll's life: auth, define, vote once, quiz secrecy, re-define keeps votes, moderation, reactions and their cooldown", async () => {
+test("a poll's life: auth, define, one vote each, quiz secrecy, re-define keeps votes, moderation, reactions and their cooldown", async () => {
   const http = createServer();
   attachPolls(http, { token: "secret" });
   await new Promise<void>((resolve) => http.listen(0, () => resolve()));
@@ -106,7 +106,8 @@ test("a poll's life: auth, define, vote once, quiz secrecy, re-define keeps vote
   presenter.say({ type: "open", id: quiz.id });
   await settle();
   ann.say({ type: "vote", id: quiz.id, option: 1 });
-  ann.say({ type: "vote", id: quiz.id, option: 0 }); // second answer is dropped
+  ann.say({ type: "vote", id: quiz.id, option: 0 }); // changes her mind…
+  ann.say({ type: "vote", id: quiz.id, option: 1 }); // …and back: still one vote
   bob.say({ type: "vote", id: quiz.id, option: 7 }); // out of range
   bob.say({ type: "vote", id: quiz.id, option: 0 });
   presenter.say({ type: "define", polls: [quiz] }); // slide re-mounted
@@ -178,6 +179,113 @@ test("a poll's life: auth, define, vote once, quiz secrecy, re-define keeps vote
   annAgain.close();
 
   for (const peer of [presenter, impostor, ann, bob]) {
+    peer.close();
+  }
+  http.close();
+});
+
+/** A poll server on a free port, and the address its sockets connect to. */
+async function serve(options: Parameters<typeof attachPolls>[1] = {}) {
+  const http = createServer();
+  attachPolls(http, options);
+  await new Promise<void>((resolve) => http.listen(0, () => resolve()));
+  const address = http.address();
+  assert.ok(address && typeof address === "object");
+  return { http, url: `ws://localhost:${address.port}/polls` };
+}
+
+test("an edited poll keeps its votes, unless its options change in number", async () => {
+  const { http, url } = await serve();
+  const presenter = await join(url, { role: "presenter" });
+  const ann = await join(url, { voter: "ann" });
+
+  const poll = { id: "tabs", slide: 2, question: "Tabs or spcaes?", options: ["Tabs", "Spcaes"] };
+  presenter.say({ type: "define", polls: [poll] });
+  presenter.say({ type: "open", id: poll.id });
+  await after(120);
+  ann.say({ type: "vote", id: poll.id, option: 1 });
+  await after(120);
+
+  const fixed = { ...poll, slide: 3, question: "Tabs or spaces?", options: ["Tabs", "Spaces"] };
+  presenter.say({ type: "define", polls: [fixed] });
+  await after(120);
+  assert.deepEqual(pollAt(ann, 0).votes, [0, 1], "a typo fix keeps the votes");
+  assert.equal(pollAt(ann, 0).question, "Tabs or spaces?");
+  assert.equal(pollAt(ann, 0).slide, 3);
+
+  presenter.say({ type: "define", polls: [{ ...fixed, options: ["Tabs", "Spaces", "Both"] }] });
+  await after(120);
+  assert.deepEqual(pollAt(ann, 0).votes, [0, 0, 0], "a third option starts afresh");
+  assert.equal(pollAt(ann, 0).total, 0);
+  assert.equal(pollAt(ann, 0).state, "idle");
+
+  presenter.close();
+  ann.close();
+  http.close();
+});
+
+test("a blind poll hides its distribution from the room until voting closes", async () => {
+  const { http, url } = await serve();
+  const presenter = await join(url, { role: "presenter" });
+  const ann = await join(url, { voter: "ann" });
+
+  const poll = { id: "next", slide: 1, question: "Next?", options: ["Rust", "Go"], blind: true };
+  presenter.say({ type: "define", polls: [poll] });
+  presenter.say({ type: "open", id: poll.id });
+  await after(120);
+  ann.say({ type: "vote", id: poll.id, option: 0 });
+  await after(120);
+  assert.equal(pollAt(ann, 0).votes, null);
+  assert.equal(pollAt(ann, 0).total, 1);
+  assert.deepEqual(pollAt(presenter, 0).votes, [1, 0]);
+
+  presenter.say({ type: "close", id: poll.id });
+  await after(120);
+  assert.deepEqual(pollAt(ann, 0).votes, [1, 0]);
+
+  presenter.close();
+  ann.close();
+  http.close();
+});
+
+test("an answer can change while voting is open, but not after, nor after moderation", async () => {
+  const { http, url } = await serve();
+  const presenter = await join(url, { role: "presenter" });
+  const ann = await join(url, { voter: "ann" });
+  const bob = await join(url, { voter: "bob" });
+  const words = (peer: Peer) => pollAt(peer, 1).words;
+
+  const choice = { id: "c", slide: 1, question: "Which?", options: ["a", "b"] };
+  const cloud = { id: "w", slide: 1, question: "Word?" };
+  presenter.say({ type: "define", polls: [choice, cloud] });
+  presenter.say({ type: "open", id: choice.id });
+  presenter.say({ type: "open", id: cloud.id });
+  await after(120);
+
+  ann.say({ type: "vote", id: choice.id, option: 0 });
+  ann.say({ type: "vote", id: choice.id, option: 1 });
+  ann.say({ type: "word", id: cloud.id, text: "teh" });
+  ann.say({ type: "word", id: cloud.id, text: "the" });
+  bob.say({ type: "word", id: cloud.id, text: "the" });
+  await after(120);
+  assert.deepEqual(pollAt(presenter, 0).votes, [0, 1]);
+  assert.equal(pollAt(presenter, 0).total, 1);
+  assert.deepEqual(words(presenter), [["the", 2]]);
+
+  bob.say({ type: "word", id: cloud.id, text: "rude" });
+  await after(120);
+  presenter.say({ type: "remove", id: cloud.id, word: "rude" });
+  await after(120);
+  bob.say({ type: "word", id: cloud.id, text: "nice" }); // removed: no second try
+  presenter.say({ type: "close", id: choice.id });
+  await after(120);
+  ann.say({ type: "vote", id: choice.id, option: 0 }); // closed
+  await after(120);
+  assert.deepEqual(words(presenter), [["the", 1]]);
+  assert.equal(pollAt(presenter, 1).total, 2);
+  assert.deepEqual(pollAt(presenter, 0).votes, [0, 1]);
+
+  for (const peer of [presenter, ann, bob]) {
     peer.close();
   }
   http.close();

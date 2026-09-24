@@ -68,6 +68,9 @@ interface Client {
   voter: string;
 }
 
+/** An option's index, or a word as the cloud keeps it. */
+type Answer = number | string;
+
 /** One poll and everything answered into it. */
 interface Poll {
   id: string;
@@ -75,8 +78,8 @@ interface Poll {
   question: string;
   options: string[] | null;
   correct: number | null;
-  /** Fingerprint of question, options and answer key: an unchanged poll keeps its votes. */
-  shape: string;
+  /** Keeps the distribution from the room while voting is open. Every quiz is blind. */
+  blind: boolean;
   state: Phase;
   revealed: boolean;
   round: number;
@@ -84,8 +87,8 @@ interface Poll {
   words: Map<string, number>;
   /** Words the presenter removed. They stay out, however often they are sent again. */
   banned: Set<string>;
-  /** Voter ids that have answered this round. */
-  voters: Set<string>;
+  /** Voter id to their answer this round. */
+  answers: Map<string, Answer>;
 }
 
 /** The answer-holding half of a poll, emptied. A round is never reused: phones remember. */
@@ -97,7 +100,7 @@ function freshRound(options: string[] | null, lastRound: number) {
     votes: options?.map(() => 0) ?? null,
     words: new Map<string, number>(),
     banned: new Set<string>(),
-    voters: new Set<string>(),
+    answers: new Map<string, Answer>(),
   };
 }
 
@@ -147,25 +150,29 @@ export function attachPolls(
     clients.set(socket, { role, voter: msg.voter ?? "" });
   }
 
-  // Re-defining an unchanged poll keeps its votes: Slidev re-mounts slides all the time.
-  // Polls that were renamed or removed stay in the map, harmlessly: phones only show what
-  // `visible` lists. ponytail: they are freed on restart; evict if decks get huge.
+  // Re-defining a poll keeps its votes: Slidev re-mounts slides all the time, and an edited
+  // question or a fixed typo in an option still counts the same answers. Only a different
+  // number of options (or a cloud turned into a choice) starts it afresh. Polls that were
+  // renamed or removed stay in the map, harmlessly: phones only show what `visible` lists.
+  // ponytail: they are freed on restart; evict if decks get huge.
   function define(defs: PollDef[]): void {
     for (const def of defs) {
-      const shape = JSON.stringify([def.question, def.options ?? null, def.correct ?? null]);
-      const old = polls.get(def.id);
-      if (old?.shape === shape) {
-        old.slide = def.slide;
-        continue;
-      }
       const options = def.options ?? null;
-      polls.set(def.id, {
-        id: def.id,
+      const old = polls.get(def.id);
+      const text = {
         slide: def.slide,
         question: def.question,
         options,
         correct: def.correct ?? null,
-        shape,
+        blind: def.blind === true || def.correct !== undefined,
+      };
+      if (old && old.options?.length === options?.length) {
+        Object.assign(old, text);
+        continue;
+      }
+      polls.set(def.id, {
+        id: def.id,
+        ...text,
         // Starts from the clock, so a restarted server never reuses a round phones remember.
         ...freshRound(options, old?.round ?? Date.now()),
       });
@@ -212,12 +219,8 @@ export function attachPolls(
 
   function vote(socket: WebSocket, msg: Message<"vote">): void {
     const poll = polls.get(msg.id);
-    const votes = poll?.votes;
-    if (!poll || !votes || msg.option >= votes.length) {
-      return;
-    }
-    if (claim(socket, poll)) {
-      votes[msg.option] = (votes[msg.option] ?? 0) + 1;
+    if (poll?.votes && msg.option < poll.votes.length) {
+      answer(socket, poll, msg.option);
     }
   }
 
@@ -227,11 +230,8 @@ export function attachPolls(
       return;
     }
     const text = msg.text.trim().replace(/\s+/g, " ").toLowerCase().slice(0, MAX_WORD);
-    if (!text || (!poll.words.has(text) && poll.words.size >= MAX_WORDS)) {
-      return;
-    }
-    if (claim(socket, poll) && !poll.banned.has(text)) {
-      poll.words.set(text, (poll.words.get(text) ?? 0) + 1);
+    if (text && (poll.words.has(text) || poll.words.size < MAX_WORDS)) {
+      answer(socket, poll, text);
     }
   }
 
@@ -264,20 +264,50 @@ export function attachPolls(
     }, REACTION_FLUSH);
   }
 
-  /** One answer per voter id per round. The id lives in the phone's localStorage. */
-  function claim(socket: WebSocket, poll: Poll): boolean {
+  /**
+   * One answer per voter id per round, which they may change while voting is open. The id
+   * lives in the phone's localStorage. A word the presenter removed stays its sender's
+   * answer, so they don't get another try.
+   */
+  function answer(socket: WebSocket, poll: Poll, value: Answer): void {
     const voter = clients.get(socket)?.voter;
-    if (poll.state !== "open" || !voter || poll.voters.has(voter)) {
-      return false;
+    if (poll.state !== "open" || !voter) {
+      return;
     }
-    poll.voters.add(voter);
-    return true;
+    const previous = poll.answers.get(voter);
+    if (previous === value || (typeof previous === "string" && poll.banned.has(previous))) {
+      return;
+    }
+    if (previous !== undefined) {
+      count(poll, previous, -1);
+    }
+    poll.answers.set(voter, value);
+    count(poll, value, 1);
+  }
+
+  /** Adds an answer to the poll's counts, or (`by` = -1) takes it back out. */
+  function count(poll: Poll, value: Answer, by: number): void {
+    if (typeof value === "number") {
+      if (poll.votes) {
+        poll.votes[value] = (poll.votes[value] ?? 0) + by;
+      }
+      return;
+    }
+    if (poll.banned.has(value)) {
+      return;
+    }
+    const n = (poll.words.get(value) ?? 0) + by;
+    if (n > 0) {
+      poll.words.set(value, n);
+    } else {
+      poll.words.delete(value);
+    }
   }
 
   /**
-   * A poll as one client may see it. While voting is open only presenters get a quiz's
-   * distribution and a cloud's words — so they can weed it before the room sees it — and
-   * only they ever get the answer key before it is revealed.
+   * A poll as one client may see it. While voting is open only presenters get a blind
+   * poll's distribution (every quiz is blind) and a cloud's words — so they can weed it
+   * before the room sees it — and only they ever get the answer key before it is revealed.
    */
   function view(poll: Poll, full: boolean): PollView {
     const quiz = poll.correct !== null;
@@ -290,8 +320,8 @@ export function attachPolls(
       state: poll.state,
       revealed: poll.revealed,
       round: poll.round,
-      total: poll.voters.size,
-      votes: full || !(quiz && poll.state === "open") ? poll.votes : null,
+      total: poll.answers.size,
+      votes: full || !(poll.blind && poll.state === "open") ? poll.votes : null,
       words: full || poll.state !== "open" ? [...poll.words] : [],
       correct: full || poll.revealed ? poll.correct : null,
     };
