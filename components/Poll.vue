@@ -24,11 +24,15 @@ import type { PollView } from "../protocol.ts";
 import PollQr from "./PollQr.vue";
 
 const props = defineProps<{
+  /** Keeps the poll's answers when its slide moves or its question is edited. Unique in the deck. */
+  id?: string;
   question: string;
   /** Absent for a word cloud. */
   options?: string[];
   /** Index into `options`: makes this a quiz, with a right answer to reveal. */
   correct?: number;
+  /** Hides the distribution from the room until voting closes, as a quiz does. */
+  blind?: boolean;
   /** How wide the QR code may be, any CSS length. Default 140px. */
   qrSize?: string;
   /** Set by `<PollSet>`: [position, of], shown as "2 / 3". */
@@ -40,13 +44,14 @@ const props = defineProps<{
 const { $page, $renderContext } = useSlideContext();
 const { isPresenter, isPrintMode } = useNav();
 
-const id = `${$page.value}:${props.question}`;
+const id = props.id ?? `${$page.value}:${props.question}`;
 polls.define({
   id,
   slide: $page.value,
   question: props.question,
   options: props.options,
   correct: props.correct,
+  blind: props.blind,
 });
 
 // Phones show the polls that are on the presenter's screen: not the ones in the next-slide
