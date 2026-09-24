@@ -35,6 +35,8 @@ export interface PollDef {
   options?: string[];
   /** Index into `options` — present only for a quiz, which has a right answer. */
   correct?: number;
+  /** A choice poll whose distribution the room sees only once voting closes, like a quiz. */
+  blind?: boolean;
 }
 
 /**
@@ -57,7 +59,7 @@ export interface PollView {
   round: number;
   /** People who have answered this round. */
   total: number;
-  /** Votes per option, or `null` for a word cloud and for a quiz still being voted on. */
+  /** Votes per option, or `null` for a word cloud and for a quiz or blind poll still open. */
   votes: number[] | null;
   /** Empty while a cloud is still being voted on and the presenter is still weeding it. */
   words: WordCount[];
@@ -116,6 +118,7 @@ const PollDefSchema = v.object({
   question: text(),
   options: v.optional(v.array(text())),
   correct: v.optional(count),
+  blind: v.optional(v.boolean()),
 });
 
 const PollViewSchema = v.object({

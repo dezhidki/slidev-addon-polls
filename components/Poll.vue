@@ -31,6 +31,8 @@ const props = defineProps<{
   options?: string[];
   /** Index into `options`: makes this a quiz, with a right answer to reveal. */
   correct?: number;
+  /** Hides the distribution from the room until voting closes, as a quiz does. */
+  blind?: boolean;
   /** How wide the QR code may be, any CSS length. Default 140px. */
   qrSize?: string;
   /** Set by `<PollSet>`: [position, of], shown as "2 / 3". */
@@ -49,6 +51,7 @@ polls.define({
   question: props.question,
   options: props.options,
   correct: props.correct,
+  blind: props.blind,
 });
 
 // Phones show the polls that are on the presenter's screen: not the ones in the next-slide

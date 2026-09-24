@@ -221,3 +221,27 @@ test("an edited poll keeps its votes, unless its options change in number", asyn
   ann.close();
   http.close();
 });
+
+test("a blind poll hides its distribution from the room until voting closes", async () => {
+  const { http, url } = await serve();
+  const presenter = await join(url, { role: "presenter" });
+  const ann = await join(url, { voter: "ann" });
+
+  const poll = { id: "next", slide: 1, question: "Next?", options: ["Rust", "Go"], blind: true };
+  presenter.say({ type: "define", polls: [poll] });
+  presenter.say({ type: "open", id: poll.id });
+  await after(120);
+  ann.say({ type: "vote", id: poll.id, option: 0 });
+  await after(120);
+  assert.equal(pollAt(ann, 0).votes, null);
+  assert.equal(pollAt(ann, 0).total, 1);
+  assert.deepEqual(pollAt(presenter, 0).votes, [1, 0]);
+
+  presenter.say({ type: "close", id: poll.id });
+  await after(120);
+  assert.deepEqual(pollAt(ann, 0).votes, [1, 0]);
+
+  presenter.close();
+  ann.close();
+  http.close();
+});

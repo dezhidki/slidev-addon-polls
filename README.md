@@ -38,11 +38,13 @@ No extra server: the poll backend runs inside Slidev's own dev server.
 | Type       | How to write it                      | What the room sees while voting |
 | ---------- | ------------------------------------ | ------------------------------- |
 | Choice     | `options`                            | Bars move live                  |
+| Blind      | `options` + `blind`                  | Only the number of answers      |
 | Quiz       | `options` + `correct` (option index) | Only the number of answers      |
 | Word cloud | no `options`                         | Only the number of answers      |
 
 ```md
 <Poll question="Tabs or spaces?" :options="['Tabs', 'Spaces']" />
+<Poll question="Which talk next?" :options="['Rust', 'Go']" blind />
 <Poll question="What is 2 + 2?" :options="['3', '4', '5']" :correct="1" />
 <Poll question="One word for this lecture so far?" />
 ```
@@ -76,10 +78,10 @@ The controls appear under each poll, in presenter mode only:
 - **Reveal answer** (quiz only): closes voting and marks the right option everywhere.
 - **Reset**: clears the answers. Click it twice within 3 seconds, so a misclick is safe.
 
-### Why quizzes and word clouds hide results
+### Why blind polls, quizzes and word clouds hide results
 
 While voting is open, only you see the answers arriving. Everyone else sees the count.
-This stops a quiz's distribution from steering the vote, and no phone receives the right
+This stops the distribution from steering the vote, and no phone receives the right
 answer before you reveal it.
 
 ### Moderating a word cloud

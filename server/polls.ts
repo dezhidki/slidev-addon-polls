@@ -75,6 +75,8 @@ interface Poll {
   question: string;
   options: string[] | null;
   correct: number | null;
+  /** Keeps the distribution from the room while voting is open. Every quiz is blind. */
+  blind: boolean;
   state: Phase;
   revealed: boolean;
   round: number;
@@ -159,6 +161,7 @@ export function attachPolls(
         question: def.question,
         options,
         correct: def.correct ?? null,
+        blind: def.blind === true || def.correct !== undefined,
       };
       if (old && old.options?.length === options?.length) {
         Object.assign(old, text);
@@ -276,9 +279,9 @@ export function attachPolls(
   }
 
   /**
-   * A poll as one client may see it. While voting is open only presenters get a quiz's
-   * distribution and a cloud's words — so they can weed it before the room sees it — and
-   * only they ever get the answer key before it is revealed.
+   * A poll as one client may see it. While voting is open only presenters get a blind
+   * poll's distribution (every quiz is blind) and a cloud's words — so they can weed it
+   * before the room sees it — and only they ever get the answer key before it is revealed.
    */
   function view(poll: Poll, full: boolean): PollView {
     const quiz = poll.correct !== null;
@@ -292,7 +295,7 @@ export function attachPolls(
       revealed: poll.revealed,
       round: poll.round,
       total: poll.voters.size,
-      votes: full || !(quiz && poll.state === "open") ? poll.votes : null,
+      votes: full || !(poll.blind && poll.state === "open") ? poll.votes : null,
       words: full || poll.state !== "open" ? [...poll.words] : [],
       correct: full || poll.revealed ? poll.correct : null,
     };
