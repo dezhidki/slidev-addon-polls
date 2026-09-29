@@ -1,5 +1,7 @@
 # slidev-addon-polls
 
+[![AI License](https://oss.korext.com/api/ai-license-badge/unknown/unknown)](https://oss.korext.com/ai-license)
+
 Live polls for [Slidev](https://sli.dev): choice polls, quizzes and word clouds. The
 audience scans a QR code and answers on their phones. The slide updates as they vote.
 
