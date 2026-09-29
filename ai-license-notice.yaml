@@ -1,0 +1,40 @@
+schema: https://oss.korext.com/ai-license/schema
+version: '1.0'
+repo:
+  owner: unknown
+  name: unknown
+  url: github-dezhidki:dezhidki/slidev-addon-polls.git
+notice_generated: '2026-09-29T05:44:15.068Z'
+attestation_source: .ai-attestation.yaml
+ai_provenance:
+  assisted_commits: 3
+  total_commits: 30
+  percentage: 10
+tools_used:
+  - name: Claude Code
+    identifier: claude-code
+    first_seen: '2026-09-22'
+    last_seen: '2026-09-22'
+    commit_count: 3
+human_review:
+  reviewed: true
+  reviewers_of_record: developers
+governance:
+  engine: null
+  last_scan: null
+  result: null
+  score: null
+  packs: []
+  findings:
+    critical: 0
+    high: 0
+    medium: 0
+    low: 0
+  proof_bundle_url: null
+  proof_bundle_count: 0
+verification:
+  attestation_file: .ai-attestation.yaml
+  online_report: https://oss.korext.com/ai-attestation/report/unknown/unknown
+specification:
+  url: https://oss.korext.com/ai-license
+  license: CC0 1.0 Universal
