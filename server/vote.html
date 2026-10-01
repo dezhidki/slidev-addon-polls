@@ -155,7 +155,7 @@
                   mine: answered(poll) === index,
                   wrong: poll.revealed && index !== poll.correct,
                 }"
-                :disabled="!online || poll.state !== 'open' || answered(poll) !== undefined"
+                :disabled="!online || poll.state !== 'open'"
                 @click="vote(poll, index)"
               >
                 <span class="bar" x-show="showResults(poll)" :style="`width:${share(poll, index)}%`"></span>
@@ -177,7 +177,7 @@
               You sent: <strong x-text="answered(poll)"></strong>
             </p>
             <form
-              x-show="answered(poll) === undefined && poll.state === 'open'"
+              x-show="poll.state === 'open'"
               @submit.prevent="sendWord(poll)"
             >
               <input
@@ -186,7 +186,7 @@
                 maxlength="40"
                 autocomplete="off"
                 enterkeyhint="send"
-                placeholder="Your word"
+                :placeholder="answered(poll) === undefined ? 'Your word' : 'A different word'"
                 aria-label="Your word"
               >
               <button type="submit" class="send" :disabled="!online">Send</button>

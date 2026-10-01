@@ -77,7 +77,7 @@ questions with → and ←, like any other click on the slide. Phones follow alo
 The controls appear under each poll, in presenter mode only:
 
 - **Open voting / Close voting**: phones can answer only while voting is open, once per
-  person.
+  person. Until voting closes they can change their answer, e.g. after a misclick.
 - **Reveal answer** (quiz only): closes voting and marks the right option everywhere.
 - **Reset**: clears the answers. Click it twice within 3 seconds, so a misclick is safe.
 
@@ -90,8 +90,8 @@ answer before you reveal it.
 ### Moderating a word cloud
 
 1. Words appear in your presenter view as they arrive.
-2. Click a word to remove it for good. It cannot be sent again, and its sender has used
-   up their answer.
+2. Click a word to remove it for good. It cannot be sent again, but its sender may send a
+   different word while voting is open.
 3. Click **Close voting** to show the cloud to everyone. You can still remove words after
    that.
 
