@@ -182,3 +182,42 @@ test("a poll's life: auth, define, vote once, quiz secrecy, re-define keeps vote
   }
   http.close();
 });
+
+/** A poll server on a free port, and the address its sockets connect to. */
+async function serve(options: Parameters<typeof attachPolls>[1] = {}) {
+  const http = createServer();
+  attachPolls(http, options);
+  await new Promise<void>((resolve) => http.listen(0, () => resolve()));
+  const address = http.address();
+  assert.ok(address && typeof address === "object");
+  return { http, url: `ws://localhost:${address.port}/polls` };
+}
+
+test("an edited poll keeps its votes, unless its options change in number", async () => {
+  const { http, url } = await serve();
+  const presenter = await join(url, { role: "presenter" });
+  const ann = await join(url, { voter: "ann" });
+
+  const poll = { id: "tabs", slide: 2, question: "Tabs or spcaes?", options: ["Tabs", "Spcaes"] };
+  presenter.say({ type: "define", polls: [poll] });
+  presenter.say({ type: "open", id: poll.id });
+  await after(120);
+  ann.say({ type: "vote", id: poll.id, option: 1 });
+  await after(120);
+
+  const fixed = { ...poll, slide: 3, question: "Tabs or spaces?", options: ["Tabs", "Spaces"] };
+  presenter.say({ type: "define", polls: [fixed] });
+  await after(120);
+  assert.deepEqual(pollAt(ann, 0).votes, [0, 1], "a typo fix keeps the votes");
+  assert.equal(pollAt(ann, 0).question, "Tabs or spaces?");
+  assert.equal(pollAt(ann, 0).slide, 3);
+
+  presenter.say({ type: "define", polls: [{ ...fixed, options: ["Tabs", "Spaces", "Both"] }] });
+  await after(120);
+  assert.deepEqual(pollAt(ann, 0).votes, [0, 0, 0], "a third option starts afresh");
+  assert.equal(pollAt(ann, 0).state, "idle");
+
+  presenter.close();
+  ann.close();
+  http.close();
+});

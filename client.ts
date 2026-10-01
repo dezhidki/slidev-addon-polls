@@ -38,6 +38,8 @@ export const pollConfig = configs as typeof configs & PollConfig;
 interface MountedPoll {
   def: PollDef;
   onScreen: number;
+  /** The definitions of the `<Poll>`s with this id that are mounted right now. */
+  live: PollDef[];
 }
 
 /** What the deck knows about the poll server. Every component renders from this. */
@@ -113,15 +115,31 @@ class PollsClient {
     }
   }
 
-  /** Called by each `<Poll>` as it is set up; only a presenter's definitions are sent on. */
-  define(def: PollDef): void {
-    const mounted = this.#polls.get(def.id);
+  /**
+   * Called by each `<Poll>` as it is set up; only a presenter's definitions are sent on.
+   * Returns the function to call when it is unmounted.
+   */
+  define(def: PollDef): () => void {
+    let mounted = this.#polls.get(def.id);
     if (mounted) {
       mounted.def = def;
     } else {
-      this.#polls.set(def.id, { def, onScreen: 0 });
+      mounted = { def, onScreen: 0, live: [] };
+      this.#polls.set(def.id, mounted);
     }
+    // Two polls may share an id to share their answers, but not with different questions:
+    // each would redefine the other, and a change in the number of options wipes the votes.
+    const content = (d: PollDef) => JSON.stringify([d.question, d.options, d.correct]);
+    const other = mounted.live.find((d) => content(d) !== content(def));
+    if (other) {
+      console.warn(
+        `[slidev-addon-polls] Two different polls share the id "${def.id}" (slides ${other.slide} and ${def.slide}). Give each its own id.`,
+      );
+    }
+    const live = mounted.live;
+    live.push(def);
     this.#announce();
+    return () => live.splice(live.indexOf(def), 1);
   }
 
   /**
