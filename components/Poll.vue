@@ -31,6 +31,8 @@ const props = defineProps<{
   options?: string[];
   /** Index into `options`: makes this a quiz, with a right answer to reveal. */
   correct?: number;
+  /** Hides the distribution from the room until voting closes, as a quiz does. */
+  blind?: boolean;
   /** How wide the QR code may be, any CSS length. Default 140px. */
   qrSize?: string;
   /** Set by `<PollSet>`: [position, of], shown as "2 / 3". */
@@ -50,6 +52,7 @@ const undefine = polls.define({
   question: props.question,
   options: props.options,
   correct: props.correct,
+  blind: props.blind,
 });
 
 // Phones show the polls that are on the presenter's screen: not the ones in the next-slide
@@ -72,6 +75,7 @@ const idle: PollView = {
   question: props.question,
   options: props.options ?? null,
   quiz: props.correct != null,
+  blind: props.blind || props.correct != null,
   state: "idle",
   revealed: false,
   round: 0,
@@ -219,6 +223,9 @@ function act(type: "open" | "close" | "reveal" | "reset", event: MouseEvent) {
         </span>
       </li>
     </ol>
+    <p v-if="options && poll.blind && poll.state === 'open' && !isPresenter" class="poll-note poll-blind-note">
+      The results appear when voting closes.
+    </p>
 
     <!-- While voting is open only the presenter gets the words, to weed them first. -->
     <p v-else class="poll-cloud">
@@ -254,6 +261,9 @@ function act(type: "open" | "close" | "reveal" | "reset", event: MouseEvent) {
         </button>
         <p v-if="!options && poll.state === 'open'" class="poll-note">
           Only you see the words until you close voting. Click a word to remove it.
+        </p>
+        <p v-if="options && poll.blind && poll.state === 'open'" class="poll-note">
+          Only you see the results until you close voting.
         </p>
       </template>
     </div>
@@ -387,6 +397,9 @@ function act(type: "open" | "close" | "reveal" | "reset", event: MouseEvent) {
   font-size: 1em;
   font-weight: 400;
   opacity: 0.7;
+}
+.poll .poll-blind-note {
+  margin-top: 0.8em;
 }
 
 .poll-status {
