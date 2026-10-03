@@ -108,6 +108,21 @@ A poll you deleted, or renamed without an `id`, never shows up.
 In the server's memory. They survive slide changes and page reloads. Restarting `slidev`
 clears them.
 
+### Decks and runs
+
+Name the deck and the occasion in the headmatter:
+
+```yaml
+pollDeck: intro-to-git      # keeps this deck apart from others on a shared poll server
+pollRun: 2026-09-23-morning # each run keeps its own results
+```
+
+- **`pollDeck`** matters when several decks share the standalone backend: each deck is a
+  room of its own, and its voting page joins that room. Without it, all decks share one.
+- **`pollRun`**: giving the talk again under a new label starts every poll afresh. The
+  earlier run's results are kept, and switching back to its label picks them up again.
+  With a static build, changing it means building again.
+
 ## Reactions
 
 The voting page has a row of emoji. Tapping one floats it up the side of the slide. In
