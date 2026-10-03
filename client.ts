@@ -12,6 +12,7 @@ import { reactive } from "vue";
 import configs from "#slidev/configs";
 import {
   type ClientMessage,
+  label,
   type PollDef,
   type PollView,
   parseServerMessage,
@@ -25,6 +26,10 @@ const RETRY_MS = 2000;
 export interface PollConfig {
   /** Address of the voting page to put in the QR code, for a deck hosted somewhere public. */
   pollUrl?: string;
+  /** Keeps this deck's polls apart from other decks' on a shared poll server. */
+  pollDeck?: unknown;
+  /** Which giving of the talk this is: each run keeps its own results. */
+  pollRun?: unknown;
   /** `false` for no reactions, a list of emoji for your own set, anything else = default. */
   reactions?: unknown;
   /** Seconds one person waits between two reactions. */
@@ -182,7 +187,13 @@ class PollsClient {
   /** First thing said on a new socket: who we are, then what our screen shows. */
   #greet(): void {
     const token = typeof pollConfig.remote === "string" ? pollConfig.remote : undefined;
-    this.send({ type: "hello", role: this.#presenter ? "presenter" : "display", token });
+    this.send({
+      type: "hello",
+      role: this.#presenter ? "presenter" : "display",
+      token,
+      deck: label(pollConfig.pollDeck),
+      run: label(pollConfig.pollRun),
+    });
     this.#announce();
   }
 

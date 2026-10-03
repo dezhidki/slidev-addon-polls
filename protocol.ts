@@ -89,6 +89,8 @@ export const MAX_WORD = 40;
 const MAX_VOTER = 64;
 /** Longest emoji, which the server counts one of per reaction on a slide. */
 const MAX_EMOJI = 16;
+/** Longest deck id or run label. */
+const MAX_LABEL = 200;
 /** Most seconds a deck may ask people to wait between reactions. */
 const MAX_COOLDOWN = 3600;
 
@@ -146,12 +148,17 @@ const ControlMessageSchema = v.object({
 });
 
 const ClientMessageSchema = v.variant("type", [
-  /** First message on every socket: who is connecting, and with what password. */
+  /**
+   * First message on every socket: who is connecting, to which deck, and with what password.
+   * A presenter also says which run of the deck it is giving; everyone else follows it.
+   */
   v.object({
     type: v.literal("hello"),
     role: v.optional(v.picklist(["presenter", "display", "audience"] satisfies Role[]), "audience"),
     token: v.optional(text()),
     voter: v.optional(text(MAX_VOTER)),
+    deck: v.optional(text(MAX_LABEL)),
+    run: v.optional(text(MAX_LABEL)),
   }),
   /** The presenter's screen declaring every poll it knows about. */
   v.object({ type: v.literal("define"), polls: v.array(PollDefSchema) }),
@@ -213,6 +220,11 @@ export type ServerMessage = v.InferOutput<typeof ServerMessageSchema>;
 
 const ClientWire = v.pipe(v.string(), v.parseJson(), ClientMessageSchema);
 const ServerWire = v.pipe(v.string(), v.parseJson(), ServerMessageSchema);
+
+/** A headmatter value as a label: YAML makes `pollRun: 2026` a number. */
+export function label(value: unknown): string | undefined {
+  return value == null ? undefined : String(value);
+}
 
 /** Parses one message from a deck or a phone. Anything unrecognised is `undefined`. */
 export function parseClientMessage(raw: string): ClientMessage | undefined {

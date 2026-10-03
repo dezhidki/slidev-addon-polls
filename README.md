@@ -79,7 +79,9 @@ The controls appear under each poll, in presenter mode only:
 - **Open voting / Close voting**: phones can answer only while voting is open, once per
   person. Until voting closes they can change their answer, e.g. after a misclick.
 - **Reveal answer** (quiz only): closes voting and marks the right option everywhere.
-- **Reset**: clears the answers. Click it twice within 3 seconds, so a misclick is safe.
+- **Reset**: starts a new round with no answers. The old round is kept in the poll's
+  history (see [Where answers are kept](#where-answers-are-kept)). Click it twice within
+  3 seconds, so a misclick is safe.
 
 ### Why blind polls, quizzes and word clouds hide results
 
@@ -106,7 +108,33 @@ A poll you deleted, or renamed without an `id`, never shows up.
 ### Where answers are kept
 
 In the server's memory. They survive slide changes and page reloads. Restarting `slidev`
-clears them.
+clears them, unless you name a file to keep them in, relative to the deck:
+
+```yaml
+pollDataFile: polls.json
+```
+
+The standalone backend takes the file as `DATA_FILE` instead (see
+[Hosting a built deck](#hosting-a-built-deck-slidev-build)). Either way, answers survive restarts, and a phone
+that answered before one still cannot answer twice. The file is also the results export:
+every deck, run and poll, with the rounds that were reset in each poll's `history`. It is
+written at most once a second, and on shutdown. Voter ids in it are random ids from the
+phones' local storage, nothing personal.
+
+### Decks and runs
+
+Name the deck and the occasion in the headmatter:
+
+```yaml
+pollDeck: intro-to-git      # keeps this deck apart from others on a shared poll server
+pollRun: 2026-09-23-morning # each run keeps its own results
+```
+
+- **`pollDeck`** matters when several decks share the standalone backend: each deck is a
+  room of its own, and its voting page joins that room. Without it, all decks share one.
+- **`pollRun`**: giving the talk again under a new label starts every poll afresh. The
+  earlier run's results are kept, and switching back to its label picks them up again.
+  With a static build, changing it means building again.
 
 ## Reactions
 
@@ -201,8 +229,12 @@ has no poll backend, though, so:
 1. Run the standalone backend:
 
    ```bash
-   PORT=3031 TOKEN=your-remote-password node node_modules/slidev-addon-polls/server/standalone.ts
+   PORT=3031 TOKEN=your-remote-password DATA_FILE=polls.json \
+     node node_modules/slidev-addon-polls/server/standalone.ts
    ```
+
+   `DATA_FILE` is optional: without it, answers are lost when the server stops. If the
+   file exists but cannot be read, the server refuses to start rather than overwrite it.
 
    The server is TypeScript that Node runs as it stands (v22.18+ or v23.6+). On an older
    Node, add `--experimental-strip-types`.
@@ -249,6 +281,11 @@ npx vue-tsc --noEmit --pretty false | grep -v '^node_modules/'
 Slidev's list of layer files as immutable, so a browser that loaded the deck before the
 file existed keeps the old list, even across server restarts. Hard-reload once
 (Ctrl/Cmd+Shift+R, or tick "Disable cache" in DevTools).
+
+## Upgrading from 0.4
+
+Nothing to change in a deck. `attachPolls` now returns `{ wss, flush }` instead of the
+WebSocket server.
 
 ## Upgrading from 0.3
 

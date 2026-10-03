@@ -7,7 +7,10 @@
  * @author Denis Zhidkikh
  */
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join as joinPath } from "node:path";
 import { test } from "node:test";
 import { WebSocket } from "ws";
 import {
@@ -31,7 +34,9 @@ interface Peer {
   close(): void;
 }
 
-async function join(url: string, hello: { role?: Role; token?: string; voter?: string }) {
+type Hello = Omit<Extract<ClientMessage, { type: "hello" }>, "type" | "role"> & { role?: Role };
+
+async function join(url: string, hello: Hello) {
   const socket = new WebSocket(url);
   const peer: Peer = {
     denied: false,
@@ -51,12 +56,7 @@ async function join(url: string, hello: { role?: Role; token?: string; voter?: s
     }
   });
   await new Promise<void>((resolve) => socket.on("open", () => resolve()));
-  peer.say({
-    type: "hello",
-    role: hello.role ?? "audience",
-    token: hello.token,
-    voter: hello.voter,
-  });
+  peer.say({ ...hello, type: "hello", role: hello.role ?? "audience" });
   return peer;
 }
 
@@ -187,11 +187,11 @@ test("a poll's life: auth, define, one vote each, quiz secrecy, re-define keeps 
 /** A poll server on a free port, and the address its sockets connect to. */
 async function serve(options: Parameters<typeof attachPolls>[1] = {}) {
   const http = createServer();
-  attachPolls(http, options);
+  const polls = attachPolls(http, options);
   await new Promise<void>((resolve) => http.listen(0, () => resolve()));
   const address = http.address();
   assert.ok(address && typeof address === "object");
-  return { http, url: `ws://localhost:${address.port}/polls` };
+  return { http, polls, url: `ws://localhost:${address.port}/polls` };
 }
 
 test("an edited poll keeps its votes, unless its options change in number", async () => {
@@ -296,4 +296,95 @@ test("an answer can change while voting is open, also after moderation, but not 
     peer.close();
   }
   http.close();
+});
+
+test("decks sharing a server keep apart, and each run of a deck keeps its own results", async () => {
+  const { http, url } = await serve();
+  const poll = { id: "q", slide: 1, question: "Same id in both decks?", options: ["y", "n"] };
+  const give = async (deck: string, run: string, option: number) => {
+    const presenter = await join(url, { role: "presenter", deck, run });
+    const phone = await join(url, { voter: `${deck}-${run}`, deck });
+    presenter.say({ type: "define", polls: [poll] });
+    presenter.say({ type: "slide", slide: 1, ids: [poll.id], reactions: [] });
+    presenter.say({ type: "open", id: poll.id });
+    await after(120);
+    phone.say({ type: "vote", id: poll.id, option });
+    await after(120);
+    return { presenter, phone };
+  };
+
+  const a = await give("a", "monday", 0);
+  const b = await give("b", "monday", 1);
+  assert.deepEqual(pollAt(a.phone, 0).votes, [1, 0], "deck b's vote stayed in deck b");
+  assert.deepEqual(pollAt(b.phone, 0).votes, [0, 1]);
+  assert.equal(seen(a.phone).audience, 1);
+
+  const again = await give("a", "tuesday", 1);
+  assert.deepEqual(pollAt(again.phone, 0).votes, [0, 1], "a new run starts empty");
+  assert.deepEqual(pollAt(a.phone, 0).votes, [0, 1], "and the room follows it");
+
+  const back = await join(url, { role: "presenter", deck: "a", run: "monday" });
+  await after(120);
+  assert.deepEqual(pollAt(back, 0).votes, [1, 0], "monday's results are still there");
+
+  for (const peer of [a, b, again].flatMap((it) => [it.presenter, it.phone]).concat(back)) {
+    peer.close();
+  }
+  http.close();
+});
+
+test("a data file carries answers across a restart, and a reset archives them", async () => {
+  const dataFile = joinPath(mkdtempSync(joinPath(tmpdir(), "polls-")), "polls.json");
+  const poll = { id: "q", slide: 1, question: "Which?", options: ["a", "b"] };
+
+  const first = await serve({ dataFile });
+  const presenter = await join(first.url, { role: "presenter", deck: "d", run: "r" });
+  const ann = await join(first.url, { voter: "ann", deck: "d" });
+  presenter.say({ type: "define", polls: [poll] });
+  presenter.say({ type: "open", id: poll.id });
+  await after(120);
+  ann.say({ type: "vote", id: poll.id, option: 0 });
+  await after(120);
+  const round = pollAt(ann, 0).round;
+  first.polls.flush();
+  presenter.close();
+  ann.close();
+  first.http.close();
+
+  const second = await serve({ dataFile });
+  const back = await join(second.url, { role: "presenter", deck: "d", run: "r" });
+  const annAgain = await join(second.url, { voter: "ann", deck: "d" });
+  await after(120);
+  assert.equal(pollAt(back, 0).round, round, "the round survives, so phones stay in step");
+  assert.equal(pollAt(back, 0).state, "open");
+  annAgain.say({ type: "vote", id: poll.id, option: 1 });
+  await after(120);
+  assert.deepEqual(pollAt(back, 0).votes, [0, 1], "ann changed her answer, not voted twice");
+
+  back.say({ type: "reset", id: poll.id });
+  await after(120);
+  second.polls.flush();
+  const saved = JSON.parse(readFileSync(dataFile, "utf8"));
+  const [[deck, { run, runs }]] = saved.decks;
+  assert.equal(deck, "d");
+  assert.equal(run, "r");
+  const [savedPoll] = runs[0][1].polls;
+  assert.deepEqual(savedPoll.votes, [0, 0]);
+  assert.deepEqual(savedPoll.history, [
+    {
+      round,
+      question: "Which?",
+      options: ["a", "b"],
+      correct: null,
+      total: 1,
+      votes: [0, 1],
+      words: [],
+    },
+  ]);
+  back.close();
+  annAgain.close();
+  second.http.close();
+
+  writeFileSync(dataFile, '{"version": 1, "decks": "oops"}');
+  assert.throws(() => attachPolls(createServer(), { dataFile }), /not a poll results file/);
 });
