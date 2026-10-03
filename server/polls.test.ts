@@ -7,8 +7,11 @@
  * @author Denis Zhidkikh
  */
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { test } from "node:test";
+import { tmpdir } from "node:os";
+import { join as joinPath } from "node:path";
+import { afterEach, test } from "node:test";
 import { WebSocket } from "ws";
 import {
   type ClientMessage,
@@ -31,13 +34,24 @@ interface Peer {
   close(): void;
 }
 
-async function join(url: string, hello: { role?: Role; token?: string; voter?: string }) {
+type Hello = Omit<Extract<ClientMessage, { type: "hello" }>, "type" | "role"> & { role?: Role };
+
+/** What each test opened, closed after it even when an assertion failed on the way. */
+const opened: (() => void)[] = [];
+afterEach(() => {
+  for (const close of opened.splice(0)) {
+    close();
+  }
+});
+
+async function join(url: string, hello: Hello) {
   const socket = new WebSocket(url);
   const peer: Peer = {
     denied: false,
     say: (msg) => socket.send(JSON.stringify(msg)),
     close: () => socket.terminate(),
   };
+  opened.push(peer.close);
   socket.on("message", (raw: Buffer) => {
     const msg = parseServerMessage(raw.toString());
     if (msg?.type === "state") {
@@ -51,12 +65,7 @@ async function join(url: string, hello: { role?: Role; token?: string; voter?: s
     }
   });
   await new Promise<void>((resolve) => socket.on("open", () => resolve()));
-  peer.say({
-    type: "hello",
-    role: hello.role ?? "audience",
-    token: hello.token,
-    voter: hello.voter,
-  });
+  peer.say({ ...hello, type: "hello", role: hello.role ?? "audience" });
   return peer;
 }
 
@@ -73,17 +82,45 @@ function pollAt(peer: Peer, index: number): PollView {
   return poll;
 }
 
-/** A pause long enough for the server's coalesced broadcast to land. */
+/** A pause, for what must not happen: long enough that it would have happened by now. */
 const after = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-test("a poll's life: auth, define, one vote each, quiz secrecy, re-define keeps votes, moderation, reactions and their cooldown", async () => {
+/** Retries `check` for up to two seconds: broadcasts are coalesced, and a busy CI is slow. */
+async function eventually(check: () => void): Promise<void> {
+  const end = Date.now() + 2000;
+  for (;;) {
+    try {
+      check();
+      return;
+    } catch (error) {
+      if (Date.now() > end) {
+        throw error;
+      }
+      await after(20);
+    }
+  }
+}
+
+/** Waits until `peer` sees poll `index` open, so its vote cannot overtake the opening. */
+const seesOpen = (peer: Peer, index = 0) =>
+  eventually(() => assert.equal(pollAt(peer, index).state, "open"));
+
+/** A poll server on a free port, and the address its sockets connect to. */
+async function serve(options: Parameters<typeof attachPolls>[1] = {}) {
   const http = createServer();
-  attachPolls(http, { token: "secret" });
+  const polls = attachPolls(http, options);
+  opened.push(() => {
+    http.closeAllConnections();
+    http.close();
+  });
   await new Promise<void>((resolve) => http.listen(0, () => resolve()));
   const address = http.address();
   assert.ok(address && typeof address === "object");
-  const url = `ws://localhost:${address.port}/polls`;
+  return { http, polls, url: `ws://localhost:${address.port}/polls` };
+}
 
+test("a poll's life: auth, define, one vote each, quiz secrecy, re-define keeps votes, moderation, reactions and their cooldown", async () => {
+  const { url } = await serve({ token: "secret" });
   const settle = () => after(120);
   const poll = (peer: Peer) => pollAt(peer, 0);
   const cloudOf = (peer: Peer) => pollAt(peer, 1);
@@ -98,13 +135,16 @@ test("a poll's life: auth, define, one vote each, quiz secrecy, re-define keeps 
   presenter.say({ type: "define", polls: [quiz] });
   ann.say({ type: "vote", id: quiz.id, option: 1 }); // not open yet
   await settle();
-  assert.ok(impostor.denied);
-  assert.equal(seen(ann).polls.length, 1, "impostor's poll was ignored");
-  assert.equal(poll(ann).total, 0, "no votes before opening");
-  assert.equal(seen(ann).audience, 2);
+  await eventually(() => {
+    assert.ok(impostor.denied);
+    assert.equal(seen(ann).polls.length, 1, "impostor's poll was ignored");
+    assert.equal(poll(ann).total, 0, "no votes before opening");
+    assert.equal(seen(ann).audience, 2);
+  });
 
   presenter.say({ type: "open", id: quiz.id });
-  await settle();
+  await seesOpen(ann);
+  await seesOpen(bob);
   ann.say({ type: "vote", id: quiz.id, option: 1 });
   ann.say({ type: "vote", id: quiz.id, option: 0 }); // changes her mind…
   ann.say({ type: "vote", id: quiz.id, option: 1 }); // …and back: still one vote
@@ -112,145 +152,134 @@ test("a poll's life: auth, define, one vote each, quiz secrecy, re-define keeps 
   bob.say({ type: "vote", id: quiz.id, option: 0 });
   presenter.say({ type: "define", polls: [quiz] }); // slide re-mounted
   await settle();
-  assert.deepEqual(poll(presenter).votes, [1, 1]);
-  assert.equal(poll(presenter).correct, 1);
-  assert.equal(poll(ann).total, 2);
-  assert.equal(poll(ann).votes, null, "open quiz hides the distribution from the audience");
-  assert.equal(poll(ann).correct, null, "and the answer");
+  await eventually(() => {
+    assert.deepEqual(poll(presenter).votes, [1, 1]);
+    assert.equal(poll(presenter).correct, 1);
+    assert.equal(poll(ann).total, 2);
+    assert.equal(poll(ann).votes, null, "open quiz hides the distribution from the audience");
+    assert.equal(poll(ann).correct, null, "and the answer");
+  });
 
   presenter.say({ type: "reveal", id: quiz.id });
-  await settle();
-  assert.deepEqual(poll(ann).votes, [1, 1]);
-  assert.equal(poll(ann).correct, 1);
+  await eventually(() => {
+    assert.deepEqual(poll(ann).votes, [1, 1]);
+    assert.equal(poll(ann).correct, 1);
+  });
 
   // One `define` carries every poll the deck knows, so the cloud arrives beside the quiz.
   const cloud = { id: "4:word?", slide: 4, question: "word?" };
   presenter.say({ type: "define", polls: [quiz, cloud] });
   presenter.say({ type: "open", id: cloud.id });
-  await settle();
+  await seesOpen(ann, 1);
+  await seesOpen(bob, 1);
   assert.equal(seen(presenter).polls.length, 2, "re-defining the quiz did not duplicate it");
   assert.deepEqual(poll(presenter).votes, [1, 1], "nor wipe its votes");
   ann.say({ type: "word", id: cloud.id, text: "  Hello   World " });
   bob.say({ type: "word", id: cloud.id, text: "__proto__" });
-  await settle();
-  assert.deepEqual(cloudOf(ann).words, [], "the room doesn't see words while voting is open");
-  assert.equal(cloudOf(ann).total, 2);
-  assert.deepEqual(cloudOf(presenter).words, [
-    ["hello world", 1],
-    ["__proto__", 1],
-  ]);
+  await eventually(() => {
+    assert.deepEqual(cloudOf(ann).words, [], "the room doesn't see words while voting is open");
+    assert.equal(cloudOf(ann).total, 2);
+    assert.deepEqual(cloudOf(presenter).words, [
+      ["hello world", 1],
+      ["__proto__", 1],
+    ]);
+  });
 
   // Moderation: removed words stay out, even if someone sends them again.
   const cat = await join(url, { voter: "cat" });
   presenter.say({ type: "remove", id: cloud.id, word: "__proto__" });
   ann.say({ type: "remove", id: cloud.id, word: "hello world" }); // not a presenter
-  await settle();
+  await eventually(() => assert.deepEqual(cloudOf(presenter).words, [["hello world", 1]]));
+  await seesOpen(cat, 1);
   cat.say({ type: "word", id: cloud.id, text: "__PROTO__" });
+  await eventually(() => assert.equal(cloudOf(presenter).total, 3));
   presenter.say({ type: "close", id: cloud.id });
-  await settle();
-  assert.deepEqual(cloudOf(ann).words, [["hello world", 1]], "closing shows the weeded cloud");
-  cat.close();
+  await eventually(() =>
+    assert.deepEqual(cloudOf(ann).words, [["hello world", 1]], "closing shows the weeded cloud"),
+  );
 
   // The presenter's screen decides what phones show, and which reactions they may send.
   presenter.say({ type: "slide", slide: 4, ids: [cloud.id], reactions: ["👍", "❤️"] });
-  await settle();
-  assert.deepEqual(seen(ann).visible, [cloud.id]);
-  assert.deepEqual(seen(ann).reactions, ["👍", "❤️"]);
+  await eventually(() => {
+    assert.deepEqual(seen(ann).visible, [cloud.id]);
+    assert.deepEqual(seen(ann).reactions, ["👍", "❤️"]);
+    assert.deepEqual(seen(bob).reactions, ["👍", "❤️"]);
+  });
 
   ann.say({ type: "react", emoji: "❤️" });
   ann.say({ type: "react", emoji: "❤️" }); // too soon after the first
   bob.say({ type: "react", emoji: "❤️" });
   bob.say({ type: "react", emoji: "<script>" }); // not on the slide's list
   await after(300);
-  assert.deepEqual(presenter.reactions?.burst, { "❤️": 2 });
-  assert.deepEqual(presenter.reactions?.tally, { "❤️": 2 });
+  await eventually(() => {
+    assert.deepEqual(presenter.reactions?.burst, { "❤️": 2 });
+    assert.deepEqual(presenter.reactions?.tally, { "❤️": 2 });
+  });
   assert.equal(ann.reactions, undefined, "phones got nothing but state: no reaction stream");
 
   // The cooldown is the deck's to set, and it follows the person, not the connection.
   assert.equal(seen(ann).cooldown, 3000, "three seconds unless the deck says otherwise");
   presenter.say({ type: "slide", slide: 4, ids: [], reactions: ["👍"], cooldown: 0.6 });
+  await eventually(() => assert.equal(seen(ann).cooldown, 600));
   await after(650);
-  assert.equal(seen(ann).cooldown, 600);
   ann.say({ type: "react", emoji: "👍" }); // cooled down by now: counts
   const annAgain = await join(url, { voter: "ann" }); // same person, fresh tab
   annAgain.say({ type: "react", emoji: "👍" }); // still cooling: dropped
   await after(300);
-  assert.deepEqual(presenter.reactions?.tally, { "❤️": 2, "👍": 1 });
-  annAgain.close();
-
-  for (const peer of [presenter, impostor, ann, bob]) {
-    peer.close();
-  }
-  http.close();
+  await eventually(() => assert.deepEqual(presenter.reactions?.tally, { "❤️": 2, "👍": 1 }));
 });
 
-/** A poll server on a free port, and the address its sockets connect to. */
-async function serve(options: Parameters<typeof attachPolls>[1] = {}) {
-  const http = createServer();
-  attachPolls(http, options);
-  await new Promise<void>((resolve) => http.listen(0, () => resolve()));
-  const address = http.address();
-  assert.ok(address && typeof address === "object");
-  return { http, url: `ws://localhost:${address.port}/polls` };
-}
-
 test("an edited poll keeps its votes, unless its options change in number", async () => {
-  const { http, url } = await serve();
+  const { url } = await serve();
   const presenter = await join(url, { role: "presenter" });
   const ann = await join(url, { voter: "ann" });
 
   const poll = { id: "tabs", slide: 2, question: "Tabs or spcaes?", options: ["Tabs", "Spcaes"] };
   presenter.say({ type: "define", polls: [poll] });
   presenter.say({ type: "open", id: poll.id });
-  await after(120);
+  await seesOpen(ann);
   ann.say({ type: "vote", id: poll.id, option: 1 });
-  await after(120);
+  await eventually(() => assert.deepEqual(pollAt(presenter, 0).votes, [0, 1]));
 
   const fixed = { ...poll, slide: 3, question: "Tabs or spaces?", options: ["Tabs", "Spaces"] };
   presenter.say({ type: "define", polls: [fixed] });
-  await after(120);
-  assert.deepEqual(pollAt(ann, 0).votes, [0, 1], "a typo fix keeps the votes");
-  assert.equal(pollAt(ann, 0).question, "Tabs or spaces?");
-  assert.equal(pollAt(ann, 0).slide, 3);
+  await eventually(() => {
+    assert.equal(pollAt(ann, 0).question, "Tabs or spaces?");
+    assert.equal(pollAt(ann, 0).slide, 3);
+    assert.deepEqual(pollAt(ann, 0).votes, [0, 1], "a typo fix keeps the votes");
+  });
 
   presenter.say({ type: "define", polls: [{ ...fixed, options: ["Tabs", "Spaces", "Both"] }] });
-  await after(120);
-  assert.deepEqual(pollAt(ann, 0).votes, [0, 0, 0], "a third option starts afresh");
-  assert.equal(pollAt(ann, 0).total, 0);
-  assert.equal(pollAt(ann, 0).state, "idle");
-
-  presenter.close();
-  ann.close();
-  http.close();
+  await eventually(() => {
+    assert.deepEqual(pollAt(ann, 0).votes, [0, 0, 0], "a third option starts afresh");
+    assert.equal(pollAt(ann, 0).total, 0);
+    assert.equal(pollAt(ann, 0).state, "idle");
+  });
 });
 
 test("a blind poll hides its distribution from the room until voting closes", async () => {
-  const { http, url } = await serve();
+  const { url } = await serve();
   const presenter = await join(url, { role: "presenter" });
   const ann = await join(url, { voter: "ann" });
 
   const poll = { id: "next", slide: 1, question: "Next?", options: ["Rust", "Go"], blind: true };
   presenter.say({ type: "define", polls: [poll] });
   presenter.say({ type: "open", id: poll.id });
-  await after(120);
+  await seesOpen(ann);
   ann.say({ type: "vote", id: poll.id, option: 0 });
-  await after(120);
-  assert.equal(pollAt(ann, 0).votes, null);
-  assert.equal(pollAt(ann, 0).blind, true);
-  assert.equal(pollAt(ann, 0).total, 1);
-  assert.deepEqual(pollAt(presenter, 0).votes, [1, 0]);
+  await eventually(() => {
+    assert.deepEqual(pollAt(presenter, 0).votes, [1, 0]);
+    assert.equal(pollAt(ann, 0).total, 1);
+    assert.equal(pollAt(ann, 0).votes, null);
+    assert.equal(pollAt(ann, 0).blind, true);
+  });
 
   presenter.say({ type: "close", id: poll.id });
-  await after(120);
-  assert.deepEqual(pollAt(ann, 0).votes, [1, 0]);
-
-  presenter.close();
-  ann.close();
-  http.close();
+  await eventually(() => assert.deepEqual(pollAt(ann, 0).votes, [1, 0]));
 });
 
 test("an answer can change while voting is open, also after moderation, but not after closing", async () => {
-  const { http, url } = await serve();
+  const { url } = await serve();
   const presenter = await join(url, { role: "presenter" });
   const ann = await join(url, { voter: "ann" });
   const bob = await join(url, { voter: "bob" });
@@ -261,28 +290,39 @@ test("an answer can change while voting is open, also after moderation, but not 
   presenter.say({ type: "define", polls: [choice, cloud] });
   presenter.say({ type: "open", id: choice.id });
   presenter.say({ type: "open", id: cloud.id });
-  await after(120);
+  await seesOpen(ann, 1);
+  await seesOpen(bob, 1);
 
   ann.say({ type: "vote", id: choice.id, option: 0 });
   ann.say({ type: "vote", id: choice.id, option: 1 });
   ann.say({ type: "word", id: cloud.id, text: "teh" });
   ann.say({ type: "word", id: cloud.id, text: "the" });
   bob.say({ type: "word", id: cloud.id, text: "the" });
-  await after(120);
-  assert.deepEqual(pollAt(presenter, 0).votes, [0, 1]);
-  assert.equal(pollAt(presenter, 0).total, 1);
-  assert.deepEqual(words(presenter), [["the", 2]]);
+  await eventually(() => {
+    assert.deepEqual(pollAt(presenter, 0).votes, [0, 1]);
+    assert.equal(pollAt(presenter, 0).total, 1);
+    assert.deepEqual(words(presenter), [["the", 2]]);
+  });
 
   bob.say({ type: "word", id: cloud.id, text: "rude" });
-  await after(120);
+  await eventually(() =>
+    assert.deepEqual(words(presenter), [
+      ["the", 1],
+      ["rude", 1],
+    ]),
+  );
   presenter.say({ type: "remove", id: cloud.id, word: "rude" });
-  await after(120);
+  await eventually(() => assert.deepEqual(words(presenter), [["the", 1]]));
   bob.say({ type: "word", id: cloud.id, text: "rude" }); // removed: stays out
-  await after(120);
-  assert.deepEqual(words(presenter), [["the", 1]]);
   bob.say({ type: "word", id: cloud.id, text: "nice" }); // a second try
+  await eventually(() =>
+    assert.deepEqual(words(presenter), [
+      ["the", 1],
+      ["nice", 1],
+    ]),
+  );
   presenter.say({ type: "close", id: choice.id });
-  await after(120);
+  await eventually(() => assert.equal(pollAt(ann, 0).state, "closed"));
   ann.say({ type: "vote", id: choice.id, option: 0 }); // closed
   await after(120);
   assert.deepEqual(words(presenter), [
@@ -291,9 +331,93 @@ test("an answer can change while voting is open, also after moderation, but not 
   ]);
   assert.equal(pollAt(presenter, 1).total, 2);
   assert.deepEqual(pollAt(presenter, 0).votes, [0, 1]);
+});
 
-  for (const peer of [presenter, ann, bob]) {
-    peer.close();
-  }
-  http.close();
+test("decks sharing a server keep apart, and each run of a deck keeps its own results", async () => {
+  const { url } = await serve();
+  const poll = { id: "q", slide: 1, question: "Same id in both decks?", options: ["y", "n"] };
+  const give = async (deck: string, run: string, option: number) => {
+    const presenter = await join(url, { role: "presenter", deck, run });
+    const phone = await join(url, { voter: `${deck}-${run}`, deck });
+    // A new run starts idle, but a run picked up again may already be open: close it first.
+    presenter.say({ type: "define", polls: [poll] });
+    presenter.say({ type: "close", id: poll.id });
+    await eventually(() => assert.equal(pollAt(phone, 0).state, "closed"));
+    presenter.say({ type: "open", id: poll.id });
+    await seesOpen(phone);
+    phone.say({ type: "vote", id: poll.id, option });
+    await eventually(() => assert.equal(pollAt(presenter, 0).votes?.[option], 1));
+    return { presenter, phone };
+  };
+
+  const a = await give("a", "monday", 0);
+  const b = await give("b", "monday", 1);
+  await eventually(() => {
+    assert.deepEqual(pollAt(a.phone, 0).votes, [1, 0], "deck b's vote stayed in deck b");
+    assert.deepEqual(pollAt(b.phone, 0).votes, [0, 1]);
+    assert.equal(seen(a.phone).audience, 1);
+  });
+
+  const again = await give("a", "tuesday", 1);
+  await eventually(() => {
+    assert.deepEqual(pollAt(again.phone, 0).votes, [0, 1], "a new run starts empty");
+    assert.deepEqual(pollAt(a.phone, 0).votes, [0, 1], "and the room follows it");
+  });
+
+  const back = await join(url, { role: "presenter", deck: "a", run: "monday" });
+  await eventually(() =>
+    assert.deepEqual(pollAt(back, 0).votes, [1, 0], "monday's results are still there"),
+  );
+});
+
+test("a data file carries answers across a restart, and a reset archives them", async () => {
+  const dataFile = joinPath(mkdtempSync(joinPath(tmpdir(), "polls-")), "polls.json");
+  const poll = { id: "q", slide: 1, question: "Which?", options: ["a", "b"] };
+
+  const first = await serve({ dataFile });
+  const presenter = await join(first.url, { role: "presenter", deck: "d", run: "r" });
+  const ann = await join(first.url, { voter: "ann", deck: "d" });
+  presenter.say({ type: "define", polls: [poll] });
+  presenter.say({ type: "open", id: poll.id });
+  await seesOpen(ann);
+  ann.say({ type: "vote", id: poll.id, option: 0 });
+  await eventually(() => assert.deepEqual(pollAt(presenter, 0).votes, [1, 0]));
+  const round = pollAt(ann, 0).round;
+  first.polls.flush();
+  first.http.closeAllConnections();
+  first.http.close();
+
+  const second = await serve({ dataFile });
+  const back = await join(second.url, { role: "presenter", deck: "d", run: "r" });
+  const annAgain = await join(second.url, { voter: "ann", deck: "d" });
+  await seesOpen(annAgain);
+  assert.equal(pollAt(back, 0).round, round, "the round survives, so phones stay in step");
+  annAgain.say({ type: "vote", id: poll.id, option: 1 });
+  await eventually(() =>
+    assert.deepEqual(pollAt(back, 0).votes, [0, 1], "ann changed her answer, not voted twice"),
+  );
+
+  back.say({ type: "reset", id: poll.id });
+  await eventually(() => assert.equal(pollAt(back, 0).state, "idle"));
+  second.polls.flush();
+  const saved = JSON.parse(readFileSync(dataFile, "utf8"));
+  const [[deck, { run, runs }]] = saved.decks;
+  assert.equal(deck, "d");
+  assert.equal(run, "r");
+  const [savedPoll] = runs[0][1].polls;
+  assert.deepEqual(savedPoll.votes, [0, 0]);
+  assert.deepEqual(savedPoll.history, [
+    {
+      round,
+      question: "Which?",
+      options: ["a", "b"],
+      correct: null,
+      total: 1,
+      votes: [0, 1],
+      words: [],
+    },
+  ]);
+
+  writeFileSync(dataFile, '{"version": 1, "decks": "oops"}');
+  assert.throws(() => attachPolls(createServer(), { dataFile }), /not a poll results file/);
 });
