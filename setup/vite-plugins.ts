@@ -7,6 +7,7 @@
  * @author Denis Zhidkikh
  */
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ResolvedSlidevOptions } from "@slidev/types";
 import type { Plugin } from "vite";
 import { label } from "../protocol.ts";
@@ -41,12 +42,22 @@ export default (options: ResolvedSlidevOptions): Plugin => ({
     if (!server.httpServer) {
       return;
     }
+    const dataFile = label(options.data.headmatter.pollDataFile);
     attachPolls(server.httpServer, {
       token: options.remote || undefined,
       joinUrl: () => {
         const lan = server.resolvedUrls?.network[0];
         return lan && `${lan}vote`;
       },
+      dataFile: dataFile && resolve(options.userRoot, dataFile),
+    });
+    // Slidev quits with `process.exit()` (q, Ctrl+C) and restarts on config changes by
+    // closing this server: write the last second's answers either way.
+    const flush = () => polls.flush();
+    process.on("exit", flush);
+    server.httpServer.on("close", () => {
+      flush();
+      process.off("exit", flush);
     });
     server.middlewares.use((req, res, next) => {
       if (!/\/vote\/?$/.test(req.url?.split("?")[0] ?? "")) {

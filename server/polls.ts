@@ -27,6 +27,7 @@ import {
   type ServerMessage,
   type Tally,
 } from "../protocol.ts";
+import { JsonFile, type Saved, type SavedPoll, type SavedRound } from "./store.ts";
 
 /** Distinct words one cloud will hold. */
 const MAX_WORDS = 500;
@@ -60,6 +61,15 @@ export interface PollOptions {
   token?: string;
   /** Where phones should go to vote, asked afresh on every broadcast. */
   joinUrl?: () => string | undefined;
+  /** A JSON file to keep everything in across restarts; unset = memory only. */
+  dataFile?: string;
+}
+
+/** A running poll server. */
+export interface PollServer {
+  wss: WebSocketServer;
+  /** Writes pending changes to the data file now. Call it before the process exits. */
+  flush(): void;
 }
 
 /** What the server remembers about one connected socket, once it has said hello. */
@@ -92,6 +102,8 @@ interface Poll {
   banned: Set<string>;
   /** Voter id to their answer this round. */
   answers: Map<string, Answer>;
+  /** Earlier rounds that had answers: a reset starts a new round, it deletes nothing. */
+  history: SavedRound[];
 }
 
 /** The answer-holding half of a poll, emptied. A round is never reused: phones remember. */
@@ -105,6 +117,24 @@ function freshRound(options: string[] | null, lastRound: number) {
     banned: new Set<string>(),
     answers: new Map<string, Answer>(),
   };
+}
+
+/** The round a poll is in, as its history keeps it; `undefined` if nobody has answered. */
+function finished(poll: Poll): SavedRound | undefined {
+  if (!poll.answers.size) {
+    return undefined;
+  }
+  const { round, question, options, correct, votes, words } = poll;
+  return { round, question, options, correct, total: poll.answers.size, votes, words: [...words] };
+}
+
+/** Ends a poll's round, into its history, and starts the next one. */
+function nextRound(poll: Poll): void {
+  const done = finished(poll);
+  Object.assign(poll, freshRound(poll.options, poll.round));
+  if (done) {
+    poll.history.push(done);
+  }
 }
 
 /** One giving of a talk: the polls answered in it, and the reactions on each slide. */
@@ -143,13 +173,10 @@ interface Room {
 /**
  * Serves the poll protocol on `httpServer` at `<base>/polls`.
  *
- * @returns the WebSocket server, so a caller can close it.
+ * @throws if `dataFile` exists but is not a results file: better than overwriting it.
  */
-export function attachPolls(
-  httpServer: UpgradableServer,
-  options: PollOptions = {},
-): WebSocketServer {
-  const { token, joinUrl } = options;
+export function attachPolls(httpServer: UpgradableServer, options: PollOptions = {}): PollServer {
+  const { token, joinUrl, dataFile } = options;
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD });
   /** Sockets that have said hello. Anything not in here is ignored and never sent to. */
   const clients = new Map<WebSocket, Client>();
@@ -157,6 +184,9 @@ export function attachPolls(
   const decks = new Map<string, Deck>();
   /** Deck id to its live room. Anyone's hello opens one; the last to leave closes it. */
   const rooms = new Map<string, Room>();
+  const store = dataFile ? new JsonFile(dataFile) : undefined;
+  restore(decks, store?.load());
+  const changed = () => store?.schedule(() => snapshot(decks));
 
   function send(socket: WebSocket, msg: ServerMessage): void {
     if (socket.readyState === socket.OPEN) {
@@ -230,7 +260,7 @@ export function attachPolls(
   // question or a fixed typo in an option still counts the same answers. Only a different
   // number of options (or a cloud turned into a choice) starts it afresh. Polls that were
   // renamed or removed stay in the map, harmlessly: phones only show what `visible` lists.
-  // ponytail: they are freed on restart; evict if decks get huge.
+  // ponytail: kept even in the data file; evict if decks get huge.
   function define(run: Run, defs: PollDef[]): void {
     for (const def of defs) {
       const options = def.options ?? null;
@@ -246,11 +276,17 @@ export function attachPolls(
         Object.assign(old, text);
         continue;
       }
+      const history = old?.history ?? [];
+      const done = old && finished(old);
+      if (done) {
+        history.push(done);
+      }
       run.polls.set(def.id, {
         id: def.id,
         ...text,
         // Starts from the clock, so a restarted server never reuses a round phones remember.
         ...freshRound(options, old?.round ?? Date.now()),
+        history,
       });
     }
   }
@@ -276,7 +312,7 @@ export function attachPolls(
         poll.revealed = true;
         break;
       case "reset":
-        Object.assign(poll, freshRound(poll.options, poll.round));
+        nextRound(poll);
         break;
     }
   }
@@ -487,6 +523,9 @@ export function attachPolls(
       }
       if (msg.type === "hello") {
         broadcast(hello(socket, msg));
+        if (msg.role === "presenter") {
+          changed(); // a new run, perhaps
+        }
         return;
       }
       const client = clients.get(socket);
@@ -494,11 +533,55 @@ export function attachPolls(
         return;
       }
       handle(client, msg);
+      changed();
       if (msg.type !== "react") {
         broadcast(client.room);
       }
     });
   });
 
-  return wss;
+  return { wss, flush: () => store?.flush() };
+}
+
+/** Everything the server has collected, as the data file keeps it. */
+function snapshot(decks: Map<string, Deck>): Saved {
+  const savePoll = (poll: Poll): SavedPoll => ({
+    ...poll,
+    words: [...poll.words],
+    banned: [...poll.banned],
+    answers: [...poll.answers],
+  });
+  return {
+    version: 1,
+    decks: [...decks].map(([id, deck]) => [
+      id,
+      {
+        run: deck.run,
+        runs: [...deck.runs].map(([label, run]) => [
+          label,
+          { polls: [...run.polls.values()].map(savePoll), tally: [...run.tally] },
+        ]),
+      },
+    ]),
+  };
+}
+
+/** Fills `decks` from what the data file kept. */
+function restore(decks: Map<string, Deck>, saved: Saved | undefined): void {
+  const loadPoll = (poll: SavedPoll): [string, Poll] => [
+    poll.id,
+    {
+      ...poll,
+      words: new Map(poll.words),
+      banned: new Set(poll.banned),
+      answers: new Map(poll.answers),
+    },
+  ];
+  for (const [id, deck] of saved?.decks ?? []) {
+    const runs = deck.runs.map(([label, run]): [string, Run] => [
+      label,
+      { polls: new Map(run.polls.map(loadPoll)), tally: new Map(run.tally) },
+    ]);
+    decks.set(id, { run: deck.run, runs: new Map(runs) });
+  }
 }
