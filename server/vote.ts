@@ -76,6 +76,8 @@ function emptyState(): StateMessage {
 }
 
 const voter = voterId();
+/** Which deck this page votes in, put in by the addon when it serves or builds the page. */
+const deck = document.querySelector<HTMLMetaElement>('meta[name="poll-deck"]')?.content;
 /** The word being typed for each poll, so a classmate's vote arriving doesn't wipe it. */
 const drafts: Record<string, string> = {};
 let socket: WebSocket | undefined;
@@ -230,7 +232,7 @@ Alpine.data("votePage", () => ({
     socket.onopen = () => {
       this.online = true;
       this.everConnected = true;
-      send({ type: "hello", role: "audience", voter });
+      send({ type: "hello", role: "audience", voter, deck });
     };
     socket.onmessage = (event: MessageEvent<string>) => {
       const msg = parseServerMessage(event.data);

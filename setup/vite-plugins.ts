@@ -9,17 +9,29 @@
 import { readFileSync } from "node:fs";
 import type { ResolvedSlidevOptions } from "@slidev/types";
 import type { Plugin } from "vite";
+import { label } from "../protocol.ts";
 import { attachPolls } from "../server/polls.ts";
 
 const votePage = new URL("../dist/vote.html", import.meta.url);
+const DECK_META = '<meta name="poll-deck" content="">';
 
-/** Read afresh every time, so rebuilding the page shows up without restarting Slidev. */
-function votePageHtml(): Buffer {
+const escapeHtml = (text: string) =>
+  text.replace(/[&<>"]/g, (c) => `&${{ "&": "amp", "<": "lt", ">": "gt", '"': "quot" }[c]};`);
+
+/**
+ * Read afresh every time, so rebuilding the page shows up without restarting Slidev, with
+ * the deck's `pollDeck` put in, so the phones join this deck's room.
+ */
+function votePageHtml(deck: string | undefined): string {
+  let html: string;
   try {
-    return readFileSync(votePage);
+    html = readFileSync(votePage, "utf8");
   } catch {
     throw new Error("slidev-addon-polls: dist/vote.html is missing — run `npm run build`");
   }
+  return deck === undefined
+    ? html
+    : html.replace(DECK_META, `<meta name="poll-deck" content="${escapeHtml(deck)}">`);
 }
 
 export default (options: ResolvedSlidevOptions): Plugin => ({
@@ -41,13 +53,17 @@ export default (options: ResolvedSlidevOptions): Plugin => ({
         return next();
       }
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.end(votePageHtml());
+      res.end(votePageHtml(label(options.data.headmatter.pollDeck)));
     });
   },
 
   // `slidev build`: ship the voting page too. As vote/index.html, so that every static
   // host serves it at /vote.
   generateBundle() {
-    this.emitFile({ type: "asset", fileName: "vote/index.html", source: votePageHtml() });
+    this.emitFile({
+      type: "asset",
+      fileName: "vote/index.html",
+      source: votePageHtml(label(options.data.headmatter.pollDeck)),
+    });
   },
 });

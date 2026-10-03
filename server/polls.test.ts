@@ -31,7 +31,9 @@ interface Peer {
   close(): void;
 }
 
-async function join(url: string, hello: { role?: Role; token?: string; voter?: string }) {
+type Hello = Omit<Extract<ClientMessage, { type: "hello" }>, "type" | "role"> & { role?: Role };
+
+async function join(url: string, hello: Hello) {
   const socket = new WebSocket(url);
   const peer: Peer = {
     denied: false,
@@ -51,12 +53,7 @@ async function join(url: string, hello: { role?: Role; token?: string; voter?: s
     }
   });
   await new Promise<void>((resolve) => socket.on("open", () => resolve()));
-  peer.say({
-    type: "hello",
-    role: hello.role ?? "audience",
-    token: hello.token,
-    voter: hello.voter,
-  });
+  peer.say({ ...hello, type: "hello", role: hello.role ?? "audience" });
   return peer;
 }
 
@@ -293,6 +290,41 @@ test("an answer can change while voting is open, also after moderation, but not 
   assert.deepEqual(pollAt(presenter, 0).votes, [0, 1]);
 
   for (const peer of [presenter, ann, bob]) {
+    peer.close();
+  }
+  http.close();
+});
+
+test("decks sharing a server keep apart, and each run of a deck keeps its own results", async () => {
+  const { http, url } = await serve();
+  const poll = { id: "q", slide: 1, question: "Same id in both decks?", options: ["y", "n"] };
+  const give = async (deck: string, run: string, option: number) => {
+    const presenter = await join(url, { role: "presenter", deck, run });
+    const phone = await join(url, { voter: `${deck}-${run}`, deck });
+    presenter.say({ type: "define", polls: [poll] });
+    presenter.say({ type: "slide", slide: 1, ids: [poll.id], reactions: [] });
+    presenter.say({ type: "open", id: poll.id });
+    await after(120);
+    phone.say({ type: "vote", id: poll.id, option });
+    await after(120);
+    return { presenter, phone };
+  };
+
+  const a = await give("a", "monday", 0);
+  const b = await give("b", "monday", 1);
+  assert.deepEqual(pollAt(a.phone, 0).votes, [1, 0], "deck b's vote stayed in deck b");
+  assert.deepEqual(pollAt(b.phone, 0).votes, [0, 1]);
+  assert.equal(seen(a.phone).audience, 1);
+
+  const again = await give("a", "tuesday", 1);
+  assert.deepEqual(pollAt(again.phone, 0).votes, [0, 1], "a new run starts empty");
+  assert.deepEqual(pollAt(a.phone, 0).votes, [0, 1], "and the room follows it");
+
+  const back = await join(url, { role: "presenter", deck: "a", run: "monday" });
+  await after(120);
+  assert.deepEqual(pollAt(back, 0).votes, [1, 0], "monday's results are still there");
+
+  for (const peer of [a, b, again].flatMap((it) => [it.presenter, it.phone]).concat(back)) {
     peer.close();
   }
   http.close();
