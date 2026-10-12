@@ -228,7 +228,7 @@ function act(type: "open" | "close" | "reveal" | "reset", event: MouseEvent) {
     </p>
 
     <!-- While voting is open only the presenter gets the words, to weed them first. -->
-    <p v-else class="poll-cloud">
+    <p v-else-if="!options" class="poll-cloud">
       <component
         :is="isPresenter ? 'button' : 'span'"
         v-for="[word, n] in words"
