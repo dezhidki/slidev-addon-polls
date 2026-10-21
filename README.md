@@ -5,7 +5,7 @@
 Simple live polls for [Slidev](https://sli.dev) slides. Easy to set up, works via dev server or as a standalone.
 
 <div align="center">
-<video src="https://github.com/user-attachments/assets/debf54d3-6469-4dad-ad90-9fa196df4d1c"></video>
+<video src="https://github.com/user-attachments/assets/c1e92b4b-42da-482c-b648-c443c952c69c"></video>
 </div>
 
 No extra server: the poll backend runs inside Slidev's own dev server.
