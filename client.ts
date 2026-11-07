@@ -18,6 +18,7 @@ import {
   parseServerMessage,
   type Tally,
 } from "./protocol.ts";
+import { createSlideSync } from "./sync.ts";
 
 /** Milliseconds before a lost or refused connection is tried again. */
 const RETRY_MS = 2000;
@@ -101,6 +102,11 @@ class PollsClient {
   #announcing = false;
   /** Earliest time another connection attempt may be made, so failures don't spin. */
   #nextAttempt = 0;
+
+  /** Whether this tab is the presenter's. */
+  get presenter(): boolean {
+    return this.#presenter;
+  }
 
   /**
    * Says one thing to the server, opening the connection first if it is not up. Nothing is
@@ -216,6 +222,9 @@ class PollsClient {
   /** First thing said on a new socket: who we are, then what our screen shows. */
   #greet(): void {
     this.send({ type: "hello", role: this.#presenter ? "presenter" : "display" });
+    if (this.#presenter) {
+      slideSync?.resend();
+    }
     this.#announce();
   }
 
@@ -255,7 +264,8 @@ class PollsClient {
       return;
     }
     if (msg.type === "sync") {
-      return; // Slide state; nothing here uses it yet.
+      slideSync?.receive(msg);
+      return;
     }
     if (msg.type === "reactions") {
       this.state.tally = msg.tally;
@@ -272,3 +282,16 @@ class PollsClient {
 
 /** This tab's connection to the poll server. */
 export const polls = new PollsClient();
+
+/**
+ * Mirrors the presenter's page, clicks and pointer to the other screens. Only in a static
+ * build, where Slidev's own sync cannot cross devices; global-bottom.vue registers it.
+ */
+export const slideSync =
+  !__SLIDEV_HAS_SERVER__ && settings.showSlides
+    ? createSlideSync({
+        send: (msg) => polls.send(msg),
+        isPresenter: () => polls.presenter,
+        drawings: settings.showDrawings === true,
+      })
+    : undefined;

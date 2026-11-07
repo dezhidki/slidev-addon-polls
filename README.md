@@ -213,8 +213,9 @@ polls:
 - **Dev server:** the phone loads the deck as a viewer, and Slidev's own sync moves it.
   The dev server sends modules one by one, so a first load is heavy: 503 requests and
   15.6 MB on the demo deck (headless Chrome, counting response headers and bodies).
-- **Builds:** the voting page embeds the built deck and follows the presenter through the
-  polling backend (see "Polls with static builds").
+- **Builds:** the voting page embeds the built deck. The addon syncs the presenter's page,
+  clicks and pointer through the poll server (see "Polls with static builds"), and only
+  the presenter can move them. A phone that joins mid-talk lands on the current slide.
 - **Spoilers:** phones load the whole deck, so a quiz's answer can be read in its
   JavaScript. Keep `showSlides` off for a quiz that must stay secret.
 

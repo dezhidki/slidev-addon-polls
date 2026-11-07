@@ -1,5 +1,12 @@
 <script lang="ts">
+import { addSyncMethod } from "@slidev/client";
 import { TRUST_ORIGINS } from "@slidev/client/constants.ts";
+import { slideSync } from "./client";
+
+// Static builds only (`slideSync` is undefined otherwise): Slidev's own sync stays on too.
+if (slideSync) {
+  addSyncMethod(slideSync.sync);
+}
 
 // On localhost Slidev lets any viewer move the presenter, so the slides embedded in the
 // voting page would reset it to slide 1. Emptying the list makes the embed receive only.

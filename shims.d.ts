@@ -11,3 +11,6 @@ declare module "#slidev/configs" {
   const configs: SlidevConfig;
   export default configs;
 }
+
+/** Set by Slidev's build: whether a dev server is behind the page. */
+declare const __SLIDEV_HAS_SERVER__: boolean;

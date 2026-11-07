@@ -21,7 +21,7 @@
     "predev": "npm run build",
     "build": "node scripts/build-vote.mjs",
     "prepare": "npm run build",
-    "test": "node --test protocol.test.ts server/polls.test.ts",
+    "test": "node --test protocol.test.ts sync.test.ts server/polls.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "lint:fix": "biome check --write ."
@@ -41,6 +41,7 @@
     "dist/vote.html",
     "client.ts",
     "protocol.ts",
+    "sync.ts",
     "global-bottom.vue",
     "global-top.vue",
     "!**/*.test.ts"
