@@ -17,6 +17,8 @@
     :root {
       color-scheme: light dark;
       --bg: #fff; --fg: #111; --quiet: #595959; --line: #cfcfcf; --tint: rgb(0 0 0 / 0.08);
+      /* The reaction bar's height: 3.25rem buttons, 0.6rem padding twice, 1px border. */
+      --bar: calc(3.25rem + 1.2rem + 1px);
     }
     @media (prefers-color-scheme: dark) {
       :root { --bg: #111; --fg: #f3f3f3; --quiet: #a6a6a6; --line: #444; --tint: rgb(255 255 255 / 0.12); }
@@ -41,20 +43,23 @@
     }
 
     /* The deck's play view, read-only: taps go nowhere, Slidev's own sync moves it. */
-    .slides { width: 100%; background: #000; z-index: 2; }
+    .slides { width: 100%; aspect-ratio: var(--ratio); background: #000; z-index: 2; }
     .slides iframe { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; }
     @media (orientation: portrait) { .slides { position: sticky; top: 0; } }
-    @media (orientation: landscape) { .slides { max-height: 100dvh; } }
-    /* Leave room for the reaction bar: 3.25rem buttons, 0.6rem padding twice, 1px border. */
+    /* As tall as fits above the reaction bar, and no wider than the slide: Slidev letterboxes
+       a wider frame in black, and the page should show beside it instead. */
     @media (orientation: landscape) {
-      body.has-reactions .slides { max-height: calc(100dvh - 4.45rem - 1px - env(safe-area-inset-bottom)); }
+      .slides { --cap: 100dvh; width: min(100%, var(--cap) * var(--ratio)); margin: 0 auto; }
+      body.has-reactions .slides { --cap: calc(100dvh - var(--bar) - env(safe-area-inset-bottom)); }
     }
-    .toggle { margin-bottom: 1.5rem; padding: 0.4rem 0.9rem; border: 1.5px solid var(--line); background: none; cursor: pointer; }
+    .toggle { min-height: 2.75rem; margin-bottom: 1.5rem; padding: 0.4rem 0.9rem; border: 1.5px solid var(--line); background: none; cursor: pointer; }
 
     section + section { margin-top: 3rem; padding-top: 3rem; border-top: 1px solid var(--line); }
     h1 { font-size: 1.6rem; line-height: 1.15; letter-spacing: -0.01em; text-wrap: balance; }
     .hint { margin: 0.5rem 0 1.5rem; color: var(--quiet); }
     .empty h1 { margin-top: 20dvh; }
+    /* The slides above already push it down. */
+    body:has(.slides) .empty h1 { margin-top: 0; }
 
     .options { display: grid; gap: 0.6rem; }
     button, input { font: inherit; color: inherit; border-radius: 0.6rem; touch-action: manipulation; }
@@ -142,13 +147,14 @@
     x-text="everConnected ? 'Connection lost. Reconnecting…' : 'Connecting…'"
   ></div>
 
+  <!-- Inert: taps already go nowhere, and Tab must not reach the deck's own controls. -->
   <template x-if="slidesRatio && showSlides">
-    <div class="slides" :style="`aspect-ratio:${slidesRatio}`">
+    <div class="slides" inert :style="{ '--ratio': slidesRatio }">
       <iframe :src="slidesUrl" title="Slides"></iframe>
     </div>
   </template>
 
-  <main id="polls" aria-live="polite" :class="{ empty: !visible.length }">
+  <main id="polls" :class="{ empty: !visible.length }">
     <button
       type="button"
       class="toggle"
@@ -159,7 +165,7 @@
     ></button>
 
     <template x-if="!visible.length">
-      <section>
+      <section aria-live="polite">
         <h1>No poll right now</h1>
         <p class="hint">Keep this page open. The next poll shows up here by itself.</p>
       </section>
@@ -169,7 +175,7 @@
       <section>
         <!-- biome-ignore lint/a11y/useHeadingContent: Alpine fills it from the poll -->
         <h1 x-text="poll.question"></h1>
-        <p class="hint" x-text="hint(poll)"></p>
+        <p class="hint" aria-live="polite" x-text="hint(poll)"></p>
 
         <!-- A choice poll or a quiz: one button per option, with its share once it is shown. -->
         <template x-if="poll.options">
@@ -182,10 +188,11 @@
                   mine: answered(poll) === index,
                   wrong: poll.revealed && index !== poll.correct,
                 }"
+                :aria-pressed="answered(poll) === index"
                 :disabled="!online || poll.state !== 'open'"
                 @click="vote(poll, index)"
               >
-                <span class="bar" x-show="showResults(poll)" :style="`width:${share(poll, index)}%`"></span>
+                <span class="bar" x-show="showResults(poll)" :style="{ width: share(poll, index) + '%' }"></span>
                 <span class="dot"></span>
                 <span>
                   <span x-text="label"></span>
@@ -235,7 +242,7 @@
     style="display: none"
     x-show="online && reactions.length > 0"
     :class="{ cooling: cooling }"
-    :style="`--wait:${wait}ms`"
+    :style="{ '--wait': wait + 'ms' }"
   >
     <template x-for="emoji in reactions" :key="emoji">
       <button

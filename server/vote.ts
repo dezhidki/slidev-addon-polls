@@ -130,11 +130,13 @@ Alpine.data("votePage", () => ({
 
   // ---- what is on screen -------------------------------------------------------------
 
-  /** What the presenter shows now, plus anything still open from an earlier slide. */
+  /** What the presenter shows now, then anything still open from an earlier slide. */
   get visible(): PollView[] {
-    return this.state.polls.filter(
-      (poll) => this.state.visible.includes(poll.id) || poll.state === "open",
-    );
+    const shown = (poll: PollView) => this.state.visible.includes(poll.id);
+    return [
+      ...this.state.polls.filter(shown),
+      ...this.state.polls.filter((poll) => !shown(poll) && poll.state === "open"),
+    ];
   },
 
   get reactions(): string[] {
