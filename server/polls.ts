@@ -16,10 +16,12 @@ import {
   type ClientMessage,
   type ControlMessage,
   DEFAULT_COOLDOWN,
+  MAX_PAYLOAD,
   MAX_WORD,
   type Phase,
   type PollDef,
   type PollView,
+  PRESENTER_MAX_PAYLOAD,
   PRESENTER_ONLY,
   parseClientMessage,
   type Role,
@@ -37,7 +39,6 @@ const LENIENCY = 300;
 const REACTION_FLUSH = 150;
 /** Milliseconds a state broadcast waits, so 300 votes become a handful of messages. */
 const BROADCAST_COALESCE = 50;
-const MAX_PAYLOAD = 16 * 1024;
 
 /** One member of the {@link ClientMessage} union, picked by its `type`. */
 type Message<T extends ClientMessage["type"]> = Extract<ClientMessage, { type: T }>;
@@ -107,14 +108,15 @@ function freshRound(options: string[] | null, lastRound: number) {
 /**
  * Serves the poll protocol on `httpServer` at `<base>/polls`.
  *
- * @returns the WebSocket server, so a caller can close it.
+ * A socket may present only if its address has a `presenter` parameter and, when the
+ * server has a token, a matching `token` parameter. Such sockets may send larger messages.
  */
-export function attachPolls(
-  httpServer: UpgradableServer,
-  options: PollOptions = {},
-): WebSocketServer {
+export function attachPolls(httpServer: UpgradableServer, options: PollOptions = {}): void {
   const { token, joinUrl } = options;
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD });
+  const presenterWss = new WebSocketServer({ noServer: true, maxPayload: PRESENTER_MAX_PAYLOAD });
+  /** Sockets whose address proved they may present. Decided at upgrade only. */
+  const mayPresent = new WeakSet<WebSocket>();
   /** Sockets that have said hello. Anything not in here is ignored and never sent to. */
   const clients = new Map<WebSocket, Client>();
   /** Polls are never deleted: a poll's answers outlive edits to the slide it is on. */
@@ -143,7 +145,7 @@ export function attachPolls(
 
   function hello(socket: WebSocket, msg: Message<"hello">): void {
     let role = msg.role;
-    if (role === "presenter" && token && msg.token !== token) {
+    if (role === "presenter" && !mayPresent.has(socket)) {
       send(socket, { type: "denied" });
       role = "display";
     }
@@ -387,13 +389,22 @@ export function attachPolls(
 
   httpServer.on("upgrade", (req, socket, head) => {
     // Anything else (Vite's HMR socket) is someone else's.
-    if (!new URL(req.url ?? "/", "http://x").pathname.endsWith("/polls")) {
+    const { pathname, searchParams } = new URL(req.url ?? "/", "http://x");
+    if (!pathname.endsWith("/polls")) {
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws));
+    const presenter =
+      searchParams.has("presenter") && (!token || searchParams.get("token") === token);
+    const server = presenter ? presenterWss : wss;
+    server.handleUpgrade(req, socket, head, (ws) => {
+      if (presenter) {
+        mayPresent.add(ws);
+      }
+      connection(ws);
+    });
   });
 
-  wss.on("connection", (socket: WebSocket) => {
+  function connection(socket: WebSocket): void {
     socket.on("error", () => {}); // a dropped phone is not an emergency
     socket.on("close", () => {
       clients.delete(socket);
@@ -416,7 +427,5 @@ export function attachPolls(
         broadcast();
       }
     });
-  });
-
-  return wss;
+  }
 }

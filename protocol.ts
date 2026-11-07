@@ -12,6 +12,11 @@
  */
 import * as v from "valibot";
 
+/** Most bytes one message from a phone or a display may hold. */
+export const MAX_PAYLOAD = 16 * 1024;
+/** Most bytes one message from an authenticated presenter may hold. */
+export const PRESENTER_MAX_PAYLOAD = 256 * 1024;
+
 /** Who is on the other end of a socket. Only a presenter may command the server. */
 export type Role = "presenter" | "display" | "audience";
 
@@ -123,7 +128,7 @@ const MAX_COOLDOWN = 3600;
 /**
  * A string. The default cap is generous because only the three limits above are held in
  * memory per person or per word — the rest is the presenter's own text, and the socket's
- * 16 kB payload limit already bounds a message as a whole.
+ * payload limit already bounds a message as a whole.
  *
  * Empty is allowed on purpose: an empty option label is an authoring slip, and refusing
  * the message over one would take every other poll on the slide down with it.
@@ -174,11 +179,10 @@ const ControlMessageSchema = v.object({
 });
 
 const ClientMessageSchema = v.variant("type", [
-  /** First message on every socket: who is connecting, and with what password. */
+  /** First message on every socket: who is connecting. A presenter proves itself on the socket address instead. */
   v.object({
     type: v.literal("hello"),
     role: v.optional(v.picklist(["presenter", "display", "audience"] satisfies Role[]), "audience"),
-    token: v.optional(text()),
     voter: v.optional(text(MAX_VOTER)),
   }),
   /** The presenter's screen declaring every poll it knows about. */

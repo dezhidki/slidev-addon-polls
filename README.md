@@ -250,6 +250,13 @@ In addition to that, you will need to run your own polling backend as follows:
 
 2. Proxy `<deck url>/polls` to it, including WebSocket upgrades.
 
+3. Present from `<deck url>/presenter?password=your-remote-password`. The deck keeps the
+   password for the tab, so a reload without it still presents.
+
+With `slidev --remote`, Slidev hands the password to every browser that loads the deck
+(`/@slidev/configs`), and its sync takes updates from anyone. For a large or untrusted
+room, serve a build instead.
+
 ## Development
 
 ```bash

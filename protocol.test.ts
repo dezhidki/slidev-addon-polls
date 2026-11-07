@@ -36,7 +36,6 @@ test("a socket that does not say who it is gets the least privileged role", () =
   assert.deepEqual(parseClientMessage(wire({ type: "hello", role: "presenter", token: "s" })), {
     type: "hello",
     role: "presenter",
-    token: "s",
   });
   assert.equal(parseClientMessage(wire({ type: "hello", role: "root" })), undefined);
   const long = wire({ type: "hello", voter: "v".repeat(65) });

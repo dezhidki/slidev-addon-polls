@@ -27,14 +27,24 @@ interface Peer {
   state?: StateMessage;
   reactions?: ReactionsMessage;
   denied: boolean;
+  /** The close code, once the server has closed the socket. */
+  closed: Promise<number>;
   say(msg: ClientMessage): void;
   close(): void;
 }
 
 async function join(url: string, hello: { role?: Role; token?: string; voter?: string }) {
-  const socket = new WebSocket(url);
+  const address = new URL(url);
+  if (hello.role === "presenter") {
+    address.searchParams.set("presenter", "");
+    if (hello.token) {
+      address.searchParams.set("token", hello.token);
+    }
+  }
+  const socket = new WebSocket(address);
   const peer: Peer = {
     denied: false,
+    closed: new Promise((resolve) => socket.on("close", resolve)),
     say: (msg) => socket.send(JSON.stringify(msg)),
     close: () => socket.terminate(),
   };
@@ -54,7 +64,6 @@ async function join(url: string, hello: { role?: Role; token?: string; voter?: s
   peer.say({
     type: "hello",
     role: hello.role ?? "audience",
-    token: hello.token,
     voter: hello.voter,
   });
   return peer;
@@ -295,5 +304,41 @@ test("an answer can change while voting is open, also after moderation, but not 
   for (const peer of [presenter, ann, bob]) {
     peer.close();
   }
+  http.close();
+});
+
+test("presenters prove themselves on the socket address, and only they may send big messages", async () => {
+  const { http, url } = await serve({ token: "secret" });
+  const presenter = await join(url, { role: "presenter", token: "secret" });
+  const wrong = await join(url, { role: "presenter", token: "nope" });
+  const missing = await join(url, { role: "presenter" });
+  const screen = await join(url, { role: "display" });
+  screen.say({ type: "hello", role: "presenter" }); // a plain socket asking to present
+  await after(120);
+  assert.equal(presenter.denied, false);
+  assert.ok(wrong.denied && missing.denied && screen.denied);
+
+  const define = (n: number) => ({
+    type: "define" as const,
+    polls: Array.from({ length: n }, (_, i) => ({
+      id: `p${i}`,
+      slide: 1,
+      question: "q".repeat(2000),
+    })),
+  });
+  presenter.say(define(50)); // about 100 kB
+  const phone = await join(url, { voter: "ann" });
+  phone.say(define(9)); // about 18 kB
+  assert.equal(await phone.closed, 1009);
+  await after(120);
+  assert.equal(seen(presenter).polls.length, 50, "the presenter's 100 kB message went through");
+  http.close();
+});
+
+test("without a server token, a socket opened as presenter may present", async () => {
+  const { http, url } = await serve();
+  const presenter = await join(url, { role: "presenter" });
+  await after(120);
+  assert.equal(presenter.denied, false);
   http.close();
 });

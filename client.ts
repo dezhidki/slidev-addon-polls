@@ -25,6 +25,29 @@ const RETRY_MS = 2000;
 /** The deck's `polls:` headmatter. */
 export const settings: PollSettings = (configs as { polls?: PollSettings }).polls ?? {};
 
+/**
+ * The presenter password, from the first place that has one: the `?password=` of the
+ * address Slidev's remote-control link opens (kept for reloads, since Slidev may drop it
+ * from the address), then the dev server's `--remote` value.
+ */
+function presenterToken(): string | undefined {
+  const fromAddress = new URLSearchParams(location.search).get("password");
+  try {
+    if (fromAddress) {
+      sessionStorage.setItem("poll-token", fromAddress);
+    }
+    const kept = sessionStorage.getItem("poll-token");
+    if (kept) {
+      return kept;
+    }
+  } catch {
+    // Storage can throw (private mode, blocked cookies); the address still counts.
+  }
+  return fromAddress ?? (typeof configs.remote === "string" ? configs.remote : undefined);
+}
+
+const token = presenterToken();
+
 /** A poll this deck declares, and how many copies of it are on screen right now. */
 interface MountedPoll {
   def: PollDef;
@@ -99,7 +122,9 @@ class PollsClient {
     this.#reactions = reactions;
     this.#cooldown = cooldown;
     // A display has nothing to announce, so it greets the server to get itself a socket.
-    if (roleChanged || !this.#socket) {
+    if (roleChanged && this.#socket) {
+      this.#reconnect();
+    } else if (roleChanged || !this.#socket) {
       this.#greet();
     } else {
       this.#announce();
@@ -160,6 +185,12 @@ class PollsClient {
     }
     this.#nextAttempt = now + RETRY_MS;
     const url = new URL(`${import.meta.env.BASE_URL}polls`, location.href.replace(/^http/, "ws"));
+    if (this.#presenter) {
+      url.searchParams.set("presenter", "");
+      if (token) {
+        url.searchParams.set("token", token);
+      }
+    }
     const socket = new WebSocket(url);
     this.#socket = socket;
     socket.onopen = () => this.#greet();
@@ -170,10 +201,21 @@ class PollsClient {
     };
   }
 
+  /** The server decides who may present when the socket opens, so a new role needs a new socket. */
+  #reconnect(): void {
+    if (this.#socket) {
+      this.#socket.onclose = null;
+      this.#socket.close();
+    }
+    this.#socket = undefined;
+    this.#nextAttempt = 0;
+    this.state.denied = false;
+    this.#connect();
+  }
+
   /** First thing said on a new socket: who we are, then what our screen shows. */
   #greet(): void {
-    const token = typeof configs.remote === "string" ? configs.remote : undefined;
-    this.send({ type: "hello", role: this.#presenter ? "presenter" : "display", token });
+    this.send({ type: "hello", role: this.#presenter ? "presenter" : "display" });
     this.#announce();
   }
 
