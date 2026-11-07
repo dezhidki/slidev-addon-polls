@@ -114,6 +114,7 @@
       border: 1.5px solid var(--line); background: none;
       font-size: 1.6rem; line-height: 1; cursor: pointer;
     }
+    #reactions img { width: 1em; height: 1em; object-fit: contain; vertical-align: middle; }
     #reactions button:active { border-color: var(--fg); }
     #reactions button.sent { animation: sent 0.35s cubic-bezier(0.2, 0.7, 0.3, 1); }
     /* Cooling down: the buttons sit out, and a line along the top runs out as they come back. */
@@ -239,13 +240,15 @@
     <template x-for="emoji in reactions" :key="emoji">
       <button
         type="button"
-        x-text="emoji"
-        :aria-label="`React with ${emoji}`"
+        :aria-label="`React with ${label(emoji)}`"
         :class="{ sent: sent === emoji }"
         :disabled="cooling"
         @click="react(emoji)"
         @animationend="sent = ''"
-      ></button>
+      >
+        <template x-if="isImage(emoji)"><img :src="src(emoji)" alt=""></template>
+        <template x-if="!isImage(emoji)"><span x-text="emoji"></span></template>
+      </button>
     </template>
   </nav>
 

@@ -197,6 +197,25 @@ Notes:
 - A flood of reactions thins out on screen instead of slowing it down.
 - People who prefer reduced motion see the counts without the floating.
 
+### Custom emotes
+
+A reaction can be an image instead of an emoji: list its path, and phones show it on the
+button, the projector floats it, and the presenter's count shows it.
+
+```yaml
+polls:
+  reactions: ["👏", "emotes/party.png", "emotes/wave.gif"]
+```
+
+- Put the files in the deck's `public/` folder. A path is read from the deck's base, so
+  `emotes/party.png` is `public/emotes/party.png`.
+- Extensions: `.png`, `.apng`, `.gif`, `.webp`, `.avif`, `.svg`, `.jpg`, `.jpeg`.
+- Every phone downloads each image, so keep each to tens of kB.
+- A full URL (`https://...`) makes phones fetch it from that host.
+- The deck preloads every emote, so the first tap floats at once.
+- Animated images keep playing on phone buttons with reduced motion; only the floating
+  on the big screen stops.
+
 ## Live slides on phones
 
 Set `polls.showSlides: true` and the voting page shows the slides above the polls, in the

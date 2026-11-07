@@ -13,8 +13,11 @@ import Alpine from "alpinejs";
 import {
   type ClientMessage,
   DEFAULT_COOLDOWN,
+  isImage,
   type PollView,
   parseServerMessage,
+  reactionLabel,
+  reactionUrl,
   type ServerMessage,
   type WordCount,
 } from "../protocol.ts";
@@ -137,6 +140,10 @@ Alpine.data("votePage", () => ({
   get reactions(): string[] {
     return this.state.reactions;
   },
+
+  isImage,
+  label: reactionLabel,
+  src: (reaction: string) => reactionUrl(reaction, base),
 
   get cooling(): boolean {
     return this.now < this.coolUntil;

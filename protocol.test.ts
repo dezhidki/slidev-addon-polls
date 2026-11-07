@@ -12,8 +12,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   DEFAULT_REACTIONS,
+  isImage,
+  MAX_REACTION,
   parseClientMessage,
   parseServerMessage,
+  reactionLabel,
+  reactionUrl,
   slideReactions,
 } from "./protocol.ts";
 
@@ -96,7 +100,10 @@ test("answers need an id and a plausible answer", () => {
     parseClientMessage(wire({ type: "word", id: "a", text: "x".repeat(200) })),
     undefined,
   );
-  assert.equal(parseClientMessage(wire({ type: "react", emoji: "x".repeat(17) })), undefined);
+  assert.equal(
+    parseClientMessage(wire({ type: "react", emoji: "x".repeat(MAX_REACTION + 1) })),
+    undefined,
+  );
 });
 
 test("a state message arrives whole or not at all", () => {
@@ -194,4 +201,45 @@ test("sync carries the presenter's slide state, and drawings by page number", ()
     {},
   );
   assert.equal(parseClientMessage(wire({ type: "sync", channel: "timer", data: {} })), undefined);
+});
+
+test("a reaction is an image when it ends in an image extension", () => {
+  for (const r of [
+    "emotes/a.png",
+    "https://x/a.webp?v=2",
+    "A.GIF",
+    "b.apng",
+    "c.avif",
+    "d.svg",
+    "e.jpg",
+    "f.jpeg",
+  ]) {
+    assert.ok(isImage(r), r);
+  }
+  for (const r of ["👍", "❤️", "png", "a.png.txt"]) {
+    assert.equal(isImage(r), false, r);
+  }
+});
+
+test("an image reaction is found under the deck's base, unless it is a full URL", () => {
+  assert.equal(reactionUrl("emotes/a.png", "/"), "/emotes/a.png");
+  assert.equal(reactionUrl("/emotes/a.png", "/talk/"), "/talk/emotes/a.png");
+  assert.equal(
+    reactionUrl("emotes/a.png", "http://h:3030/talk/"),
+    "http://h:3030/talk/emotes/a.png",
+  );
+  assert.equal(reactionUrl("https://cdn/x.gif", "/talk/"), "https://cdn/x.gif");
+  assert.equal(reactionUrl("//cdn/x.gif", "/"), "//cdn/x.gif");
+});
+
+test("an image reaction is named after its file", () => {
+  assert.equal(reactionLabel("emotes/catjam.png"), "catjam");
+  assert.equal(reactionLabel("https://x/y/party.gif?v=1"), "party");
+  assert.equal(reactionLabel("👍"), "👍");
+});
+
+test("a reaction can be a path of a few hundred characters", () => {
+  const path = `emotes/${"a".repeat(300)}.png`;
+  assert.ok(parseClientMessage(wire({ type: "slide", slide: 1, ids: [], reactions: [path] })));
+  assert.ok(parseClientMessage(wire({ type: "react", emoji: path })));
 });

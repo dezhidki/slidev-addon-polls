@@ -117,12 +117,38 @@ export function slideReactions(
   };
 }
 
+const IMAGE = /\.(png|apng|gif|webp|avif|svg|jpe?g)(\?.*)?$/i;
+
+/** Whether a reaction is an image file rather than an emoji. */
+export function isImage(reaction: string): boolean {
+  return IMAGE.test(reaction);
+}
+
+/** Where an image reaction is served: full URLs as they are, paths under the deck's base. */
+export function reactionUrl(reaction: string, base: string): string {
+  return /^(https?:)?\/\//.test(reaction)
+    ? reaction
+    : `${base.replace(/\/$/, "")}/${reaction.replace(/^\//, "")}`;
+}
+
+/** What a screen reader says for a reaction: an image's file name, else the emoji. */
+export function reactionLabel(reaction: string): string {
+  return isImage(reaction)
+    ? (
+        reaction
+          .replace(/[?#].*$/, "")
+          .split("/")
+          .pop() ?? reaction
+      ).replace(/\.[^.]+$/, "")
+    : reaction;
+}
+
 /** Longest word a cloud keeps; the server trims and cuts what it is sent to this. */
 export const MAX_WORD = 40;
 /** Longest voter id, which the server keeps one of per person who has answered. */
 const MAX_VOTER = 64;
-/** Longest emoji, which the server counts one of per reaction on a slide. */
-const MAX_EMOJI = 16;
+/** Longest reaction: an emoji, or the path or URL of an image. One is counted per slide. */
+export const MAX_REACTION = 512;
 /** Most seconds a deck may ask people to wait between reactions. */
 const MAX_COOLDOWN = 3600;
 
@@ -143,7 +169,7 @@ const pollId = v.pipe(v.string(), v.nonEmpty(), v.maxLength(2048));
 const count = v.pipe(v.number(), v.integer(), v.minValue(0));
 
 const PhaseSchema = v.picklist(["idle", "open", "closed"] satisfies Phase[]);
-const TallySchema = v.record(text(MAX_EMOJI), count);
+const TallySchema = v.record(text(MAX_REACTION), count);
 
 // The schemas below describe the two types above. A drift between them is a compile
 // error where the parsed output meets them: `define()` in server/polls.ts, `byId` in
@@ -226,7 +252,7 @@ const ClientMessageSchema = v.variant("type", [
     type: v.literal("slide"),
     slide: count,
     ids: v.array(pollId),
-    reactions: v.array(text(MAX_EMOJI)),
+    reactions: v.array(text(MAX_REACTION)),
     /** Seconds. Out of range is pulled into range rather than dropping the message. */
     cooldown: v.optional(
       v.pipe(
@@ -243,7 +269,7 @@ const ClientMessageSchema = v.variant("type", [
   /** A phone answering a word cloud; the server trims and cuts it down to size. */
   v.object({ type: v.literal("word"), id: pollId, text: text(MAX_WORD * 4) }),
   /** A phone tapping an emoji. */
-  v.object({ type: v.literal("react"), emoji: text(MAX_EMOJI) }),
+  v.object({ type: v.literal("react"), emoji: text(MAX_REACTION) }),
   SyncMessageSchema,
 ]);
 
@@ -256,7 +282,7 @@ const ServerMessageSchema = v.variant("type", [
     slide: count,
     /** Poll ids on the presenter's screen right now. */
     visible: v.array(pollId),
-    reactions: v.array(text(MAX_EMOJI)),
+    reactions: v.array(text(MAX_REACTION)),
     /** Milliseconds one person waits between two reactions. */
     cooldown: count,
     tally: TallySchema,
