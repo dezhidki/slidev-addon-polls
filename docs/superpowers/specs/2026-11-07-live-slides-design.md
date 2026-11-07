@@ -105,9 +105,11 @@ Both the dev middleware and `generateBundle` apply it. No protocol change.
 - A "Show slides" / "Hide slides" toggle at the top, only when `data-slides` is set.
   Starts on, because the deck opted in. The choice is kept in `localStorage`
   (`poll-slides`).
-- When on: `<iframe src="<base>?embedded=true">`, full width, at the deck's aspect ratio,
-  sticky at the top in portrait. In landscape it is capped at the viewport height and the
-  polls scroll below it.
+- When on: `<iframe src="<base>?embedded=true">` at the deck's aspect ratio. In portrait
+  it is full width and sticky at the top. In landscape the slides and the polls sit side by
+  side: the slides on the left, as tall as the space above the reaction bar allows and at
+  most about 60% of the width, the polls on the right, scrolling on their own, with the
+  toggle at their top.
 - `pointer-events: none` on the iframe. Taps and swipes on Slidev's play view navigate
   locally, which would take the phone off the presenter's slide. Being exactly the
   slide's aspect ratio also keeps Slidev's nav bar hidden.

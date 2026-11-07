@@ -227,8 +227,8 @@ polls:
 Set `polls.showSlides: true` and the voting page shows the slides above the polls, in the
 same page and click as the presenter. Taps on the slide do nothing. A "Hide slides"
 button on the page turns them off for that phone (the phone remembers), and a hidden deck
-is not loaded at all. Turned sideways, the slides fill the screen and the polls scroll
-below.
+is not loaded at all. Turned sideways, the slides and the polls sit side by side, and the
+polls scroll on their own.
 
 ```yaml
 polls:
