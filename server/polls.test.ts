@@ -332,6 +332,9 @@ test("presenters prove themselves on the socket address, and only they may send 
   assert.equal(await phone.closed, 1009);
   await after(120);
   assert.equal(seen(presenter).polls.length, 50, "the presenter's 100 kB message went through");
+  for (const peer of [presenter, wrong, missing, screen, phone]) {
+    peer.close();
+  }
   http.close();
 });
 
@@ -340,5 +343,6 @@ test("without a server token, a socket opened as presenter may present", async (
   const presenter = await join(url, { role: "presenter" });
   await after(120);
   assert.equal(presenter.denied, false);
+  presenter.close();
   http.close();
 });
