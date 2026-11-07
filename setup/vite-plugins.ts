@@ -30,11 +30,7 @@ function votePageHtml(options: ResolvedSlidevOptions): string {
   if (!config.polls?.showSlides) {
     return html;
   }
-  const root = '<html lang="en">';
-  if (!html.includes(root)) {
-    throw new Error(`slidev-addon-polls: dist/vote.html has no ${root} to mark`);
-  }
-  return html.replace(root, `<html lang="en" data-slides="${config.aspectRatio}">`);
+  return html.replace("<html", `<html data-slides="${config.aspectRatio}"`);
 }
 
 export default (options: ResolvedSlidevOptions): Plugin => ({

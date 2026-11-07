@@ -8,7 +8,7 @@
  * @author Claude
  * @author Denis Zhidkikh
  */
-import { PRESENTER_MAX_PAYLOAD, type SharedSync, type SyncMessage } from "./protocol.ts";
+import { PRESENTER_MAX_PAYLOAD, type SyncMessage } from "./protocol.ts";
 
 /**
  * Slidev's sync interface, copied rather than imported: importing `@slidev/client` from a
@@ -38,15 +38,6 @@ export interface SlideSyncOptions {
   drawings: boolean;
 }
 
-export interface SlideSync {
-  /** For Slidev's `addSyncMethod`. */
-  sync: Sync;
-  /** A `sync` from the server; ignored in the presenter tab. */
-  receive(msg: SyncMessage): void;
-  /** Sends every channel's full current state; called when a presenter socket opens. */
-  resend(): void;
-}
-
 /** What Slidev's shared state sends on, with a hidden pointer as `null` (JSON has no `undefined`). */
 function pick(state: object) {
   const { page, clicks, clicksTotal, cursor, lastUpdate } = state as Record<string, unknown>;
@@ -60,13 +51,12 @@ function pick(state: object) {
 }
 type Picked = ReturnType<typeof pick>;
 
-export function createSlideSync(options: SlideSyncOptions): SlideSync {
+export function createSlideSync(options: SlideSyncOptions) {
   const { send, isPresenter } = options;
   let onUpdate: ((data: Partial<object>) => void) | undefined;
   /** The state last sent, and the same as JSON for comparing. */
   let sent: Picked | undefined;
   let sentJson = "";
-  let latest: Picked | undefined;
   /** The reactive object Slidev gave `init`, so a resend sees the live state, not the last write. */
   let live: object | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -77,26 +67,29 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
   const sentDrawings = new Map<string, string>();
   let drawTimer: ReturnType<typeof setTimeout> | undefined;
 
-  function warnOnce(key: string, text: string): void {
+  /** Sends one message, unless it is over the presenter cap: then it warns, once per page. */
+  function trySend(channel: SyncMessage["channel"], data: object, page: unknown): boolean {
+    const msg = { type: "sync", channel, data } as SyncMessage;
+    if (new TextEncoder().encode(JSON.stringify(msg)).length <= PRESENTER_MAX_PAYLOAD) {
+      send(msg);
+      return true;
+    }
+    const key = `${channel} ${page}`;
     if (!warned.has(key)) {
       warned.add(key);
-      console.warn(`[slidev-addon-polls] ${text}`);
+      const what = channel === "drawings" ? "drawing" : "slide state";
+      console.warn(
+        `[slidev-addon-polls] The ${what} on page ${page} is too big to sync to the screens.`,
+      );
     }
+    return false;
   }
 
-  /** Sends one page's drawing, unless it is too big; true when it went out. */
-  function emitDrawing(page: string, svg: string): boolean {
-    const msg = { type: "sync", channel: "drawings", data: { [page]: svg } } as SyncMessage;
-    if (new TextEncoder().encode(JSON.stringify(msg)).length > PRESENTER_MAX_PAYLOAD) {
-      warnOnce(
-        `drawings ${page}`,
-        `The drawing on page ${page} is too big to sync to the screens.`,
-      );
-      return false;
+  /** Sends one page's drawing, unless it is too big. */
+  function emitDrawing(page: string, svg: string): void {
+    if (trySend("drawings", { [page]: svg }, page)) {
+      sentDrawings.set(page, svg);
     }
-    sentDrawings.set(page, svg);
-    send(msg);
-    return true;
   }
 
   /** Sends every page that differs from what was last sent (a cleared page as ""). */
@@ -116,17 +109,10 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
     if (!force && json === sentJson) {
       return;
     }
-    const msg = { type: "sync", channel: "shared", data: picked } as SyncMessage;
-    if (new TextEncoder().encode(JSON.stringify(msg)).length > PRESENTER_MAX_PAYLOAD) {
-      warnOnce(
-        `shared ${picked.page}`,
-        `The slide state on page ${picked.page} is too big to sync to the screens.`,
-      );
-      return;
+    if (trySend("shared", picked, picked.page)) {
+      sent = picked;
+      sentJson = json;
     }
-    sent = picked;
-    sentJson = json;
-    send(msg);
   }
 
   const sync: Sync = {
@@ -134,11 +120,10 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
       if (options.drawings && channelKey.endsWith(" - drawings")) {
         onDrawings = update as (data: Partial<object>) => void;
         liveDrawings = state as Record<string, string | undefined>;
-        return (current, updating) => {
+        return (_current, updating) => {
           if (!isPresenter() || updating) {
             return;
           }
-          liveDrawings = current as Record<string, string | undefined>;
           drawTimer ??= setTimeout(flushDrawings, POINTER_MS);
         };
       }
@@ -147,16 +132,11 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
       }
       onUpdate = update as (data: Partial<object>) => void;
       live = state;
-      latest = pick(state);
       return (current, updating) => {
         if (!isPresenter() || updating) {
           return;
         }
         const picked = pick(current);
-        latest = picked;
-        if (JSON.stringify(picked) === sentJson) {
-          return;
-        }
         if (
           picked.page !== sent?.page ||
           picked.clicks !== sent?.clicks ||
@@ -165,23 +145,22 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
           emit(picked);
         } else {
           // Not reset by later writes: one message per interval, with the latest state.
-          timer ??= setTimeout(() => latest && emit(latest), POINTER_MS);
+          timer ??= setTimeout(() => emit(pick(state)), POINTER_MS);
         }
       };
     },
   };
 
   return {
+    /** For Slidev's `addSyncMethod`. */
     sync,
-    receive(msg) {
+    /** A `sync` from the server; ignored in the presenter tab. */
+    receive(msg: SyncMessage): void {
       if (isPresenter()) {
         return;
       }
       if (msg.channel === "drawings") {
         onDrawings?.(msg.data);
-        return;
-      }
-      if (msg.channel !== "shared") {
         return;
       }
       // The projector has each change from Slidev's BroadcastChannel a round trip before the
@@ -193,11 +172,12 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
         return;
       }
       const data = Object.fromEntries(
-        Object.entries(msg.data satisfies SharedSync).map(([k, v]) => [k, v ?? undefined]),
+        Object.entries(msg.data).map(([k, v]) => [k, v ?? undefined]),
       );
       onUpdate?.(data);
     },
-    resend() {
+    /** Sends every channel's full current state; called when a presenter socket opens. */
+    resend(): void {
       if (live) {
         emit(pick(live), true);
       }

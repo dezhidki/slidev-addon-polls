@@ -33,18 +33,16 @@ export const settings: PollSettings = (configs as { polls?: PollSettings }).poll
  */
 function presenterToken(): string | undefined {
   const fromAddress = new URLSearchParams(location.search).get("password");
+  const remote = typeof configs.remote === "string" ? configs.remote : undefined;
   try {
     if (fromAddress) {
       sessionStorage.setItem("poll-token", fromAddress);
     }
-    const kept = sessionStorage.getItem("poll-token");
-    if (kept) {
-      return kept;
-    }
+    return sessionStorage.getItem("poll-token") ?? remote;
   } catch {
     // Storage can throw (private mode, blocked cookies); the address still counts.
+    return fromAddress ?? remote;
   }
-  return fromAddress ?? (typeof configs.remote === "string" ? configs.remote : undefined);
 }
 
 const token = presenterToken();
@@ -130,7 +128,7 @@ class PollsClient {
     // A display has nothing to announce, so it greets the server to get itself a socket.
     if (roleChanged && this.#socket) {
       this.#reconnect();
-    } else if (roleChanged || !this.#socket) {
+    } else if (!this.#socket) {
       this.#greet();
     } else {
       this.#announce();

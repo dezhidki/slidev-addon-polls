@@ -117,11 +117,9 @@ export function slideReactions(
   };
 }
 
-const IMAGE = /\.(png|apng|gif|webp|avif|svg|jpe?g)(\?.*)?$/i;
-
 /** Whether a reaction is an image file rather than an emoji. */
 export function isImage(reaction: string): boolean {
-  return IMAGE.test(reaction);
+  return /\.(png|apng|gif|webp|avif|svg|jpe?g)([?#].*)?$/i.test(reaction);
 }
 
 /** Where an image reaction is served: full URLs as they are, paths under the deck's base. */
@@ -134,12 +132,10 @@ export function reactionUrl(reaction: string, base: string): string {
 /** What a screen reader says for a reaction: an image's file name, else the emoji. */
 export function reactionLabel(reaction: string): string {
   return isImage(reaction)
-    ? (
-        reaction
-          .replace(/[?#].*$/, "")
-          .split("/")
-          .pop() ?? reaction
-      ).replace(/\.[^.]+$/, "")
+    ? reaction
+        .replace(/[?#].*$/, "")
+        .replace(/^.*\//, "")
+        .replace(/\.[^.]+$/, "")
     : reaction;
 }
 

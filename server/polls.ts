@@ -115,9 +115,8 @@ function freshRound(options: string[] | null, lastRound: number) {
 export function attachPolls(httpServer: UpgradableServer, options: PollOptions = {}): void {
   const { token, joinUrl } = options;
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD });
+  /** Upgrades only sockets whose address proved they may present, so its `clients` say who may. */
   const presenterWss = new WebSocketServer({ noServer: true, maxPayload: PRESENTER_MAX_PAYLOAD });
-  /** Sockets whose address proved they may present. Decided at upgrade only. */
-  const mayPresent = new WeakSet<WebSocket>();
   /** Sockets that have said hello. Anything not in here is ignored and never sent to. */
   const clients = new Map<WebSocket, Client>();
   /** Polls are never deleted: a poll's answers outlive edits to the slide it is on. */
@@ -151,7 +150,7 @@ export function attachPolls(httpServer: UpgradableServer, options: PollOptions =
 
   function hello(socket: WebSocket, msg: Message<"hello">): void {
     let role = msg.role;
-    if (role === "presenter" && !mayPresent.has(socket)) {
+    if (role === "presenter" && !presenterWss.clients.has(socket)) {
       send(socket, { type: "denied" });
       role = "display";
     }
@@ -167,10 +166,10 @@ export function attachPolls(httpServer: UpgradableServer, options: PollOptions =
     }
     if (role === "display") {
       if (Object.keys(synced.shared).length) {
-        send(socket, { type: "sync", channel: "shared", data: { ...synced.shared } });
+        send(socket, { type: "sync", channel: "shared", data: synced.shared });
       }
       if (Object.keys(synced.drawings).length) {
-        send(socket, { type: "sync", channel: "drawings", data: { ...synced.drawings } });
+        send(socket, { type: "sync", channel: "drawings", data: synced.drawings });
       }
     }
   }
@@ -438,13 +437,7 @@ export function attachPolls(httpServer: UpgradableServer, options: PollOptions =
     }
     const presenter =
       searchParams.has("presenter") && (!token || searchParams.get("token") === token);
-    const server = presenter ? presenterWss : wss;
-    server.handleUpgrade(req, socket, head, (ws) => {
-      if (presenter) {
-        mayPresent.add(ws);
-      }
-      connection(ws);
-    });
+    (presenter ? presenterWss : wss).handleUpgrade(req, socket, head, connection);
   });
 
   function connection(socket: WebSocket): void {

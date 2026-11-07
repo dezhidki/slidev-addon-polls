@@ -1,6 +1,7 @@
 /**
  * The slide sync method, driven the way Slidev drives it: `init` once per channel, then
- * `write` on every change. Timers are mocked, so the 100 ms throttle runs instantly.
+ * `write` on every change, of the same state object changed in place. Timers are mocked, so
+ * the 100 ms throttle runs instantly.
  *
  *     npm test
  *
@@ -81,8 +82,8 @@ test("a new page goes out at once, without the timer, a hidden cursor as null", 
 test("pointer moves are thinned to one per 100 ms, carrying the latest position", (t) => {
   const { state, write, sent, tick } = rig(t);
   write(state);
-  write({ ...state, cursor: { x: 1, y: 1 } });
-  write({ ...state, cursor: { x: 2, y: 2 } });
+  write(Object.assign(state, { cursor: { x: 1, y: 1 } }));
+  write(Object.assign(state, { cursor: { x: 2, y: 2 } }));
   assert.equal(sent.length, 1);
   tick(100);
   assert.equal(sent.length, 2);
@@ -92,9 +93,8 @@ test("pointer moves are thinned to one per 100 ms, carrying the latest position"
 test("a page change sends a pending pointer move along, and nothing is sent twice", (t) => {
   const { state, write, sent, tick } = rig(t);
   write(state);
-  write({ ...state, cursor: { x: 1, y: 1 } });
-  const next = { ...state, page: 3, cursor: { x: 1, y: 1 } };
-  write(next);
+  write(Object.assign(state, { cursor: { x: 1, y: 1 } }));
+  write(Object.assign(state, { page: 3 }));
   assert.equal(sent.length, 2);
   assert.deepEqual((sent[1] as { data: unknown }).data, {
     page: 3,
@@ -105,9 +105,9 @@ test("a page change sends a pending pointer move along, and nothing is sent twic
   });
   tick(100);
   assert.equal(sent.length, 2);
-  write(next);
+  write(state);
   assert.equal(sent.length, 2);
-  write({ ...next, timer: { status: "running" } });
+  write(Object.assign(state, { timer: { status: "running" } }));
   tick(100);
   assert.equal(sent.length, 2);
 });
@@ -163,9 +163,8 @@ test("resend sends the whole current state, even when unchanged", (t) => {
 test("a message over the presenter cap is dropped with one warning", (t) => {
   const { state, write, sent } = rig(t);
   const warn = t.mock.method(console, "warn", () => {});
-  const big = { ...state, cursor: { x: 1, y: "x".repeat(300 * 1024) } as never };
-  write(big);
-  write({ ...big, clicks: 1 });
+  write(Object.assign(state, { cursor: { x: 1, y: "x".repeat(300 * 1024) } as never }));
+  write(Object.assign(state, { clicks: 1 }));
   assert.equal(sent.length, 0);
   assert.equal(warn.mock.callCount(), 1);
 });
@@ -182,51 +181,51 @@ test("resend sends the live state, even when no write was accepted yet", (t) => 
 });
 
 test("drawings go out page by page, only changed pages, at most every 100 ms", (t) => {
-  const { sent, drawWrite, tick } = drawingRig(t);
-  drawWrite({ 1: "a" });
-  drawWrite({ 1: "ab" });
+  const { sent, drawState, drawWrite, tick } = drawingRig(t);
+  drawWrite(Object.assign(drawState, { 1: "a" }));
+  drawWrite(Object.assign(drawState, { 1: "ab" }));
   assert.equal(sent.length, 0);
   tick(100);
   assert.deepEqual(sent, [{ type: "sync", channel: "drawings", data: { "1": "ab" } }]);
-  drawWrite({ 1: "ab", 2: "c" });
+  drawWrite(Object.assign(drawState, { 1: "ab", 2: "c" }));
   tick(100);
   assert.equal(sent.length, 2);
   assert.deepEqual(data(sent[1]), { "2": "c" });
-  drawWrite({ 1: "", 2: "c" });
+  drawWrite(Object.assign(drawState, { 1: "", 2: "c" }));
   tick(100);
   assert.equal(sent.length, 3);
   assert.deepEqual(data(sent[2]), { "1": "" });
 });
 
 test("drawings are sent by the presenter only, and not for updating writes", (t) => {
-  const { sent, drawWrite, flags, tick } = drawingRig(t);
-  drawWrite({ 1: "a" }, true);
+  const { sent, drawState, drawWrite, flags, tick } = drawingRig(t);
+  drawWrite(Object.assign(drawState, { 1: "a" }), true);
   flags.presenter = false;
-  drawWrite({ 1: "a" });
+  drawWrite(Object.assign(drawState, { 1: "a" }));
   tick(100);
   assert.equal(sent.length, 0);
 });
 
 test("a drawing too big to send is skipped with one warning", (t) => {
-  const { sent, drawWrite, tick } = drawingRig(t);
+  const { sent, drawState, drawWrite, tick } = drawingRig(t);
   const warn = t.mock.method(console, "warn", () => {});
-  drawWrite({ 1: "x".repeat(300 * 1024) });
+  drawWrite(Object.assign(drawState, { 1: "x".repeat(300 * 1024) }));
   tick(100);
-  drawWrite({ 1: "y".repeat(300 * 1024) });
+  drawWrite(Object.assign(drawState, { 1: "y".repeat(300 * 1024) }));
   tick(100);
   assert.equal(sent.length, 0);
   assert.equal(warn.mock.callCount(), 1);
-  drawWrite({ 1: "z".repeat(300 * 1024), 2: "small" });
+  drawWrite(Object.assign(drawState, { 1: "z".repeat(300 * 1024), 2: "small" }));
   tick(100);
   assert.equal(sent.length, 1);
   assert.deepEqual(data(sent[0]), { "2": "small" });
 });
 
 test("the shared and drawings oversize warnings do not suppress each other", (t) => {
-  const { state, write, drawWrite, tick } = drawingRig(t);
+  const { state, write, drawState, drawWrite, tick } = drawingRig(t);
   const warn = t.mock.method(console, "warn", () => {});
-  write({ ...state, cursor: { x: 1, y: "x".repeat(300 * 1024) } as never });
-  drawWrite({ 2: "x".repeat(300 * 1024) });
+  write(Object.assign(state, { cursor: { x: 1, y: "x".repeat(300 * 1024) } as never }));
+  drawWrite(Object.assign(drawState, { 2: "x".repeat(300 * 1024) }));
   tick(100);
   assert.equal(warn.mock.callCount(), 2);
 });
@@ -240,10 +239,10 @@ test("resend sends every drawn page on its own", (t) => {
 });
 
 test("resend also sends a page cleared since it was sent, so a clear survives a reconnect", (t) => {
-  const { slide, drawWrite, sent, tick } = drawingRig(t);
-  drawWrite({ 1: "a", 2: "b" });
+  const { slide, drawState, drawWrite, sent, tick } = drawingRig(t);
+  drawWrite(Object.assign(drawState, { 1: "a", 2: "b" }));
   tick(100);
-  drawWrite({ 1: "", 2: "b" });
+  drawWrite(Object.assign(drawState, { 1: "", 2: "b" }));
   tick(100);
   sent.length = 0;
   slide.resend();

@@ -213,6 +213,7 @@ test("a reaction is an image when it ends in an image extension", () => {
     "d.svg",
     "e.jpg",
     "f.jpeg",
+    "f.png#x",
   ]) {
     assert.ok(isImage(r), r);
   }
