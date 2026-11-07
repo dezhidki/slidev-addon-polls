@@ -2,7 +2,8 @@
 /**
  * Reactions: emoji the audience taps on their phones float up the side of the slide.
  * Each emoji rises from its own spot, so a hall of hearts reads as one stream of hearts.
- * In presenter mode the corner also counts them for the current slide.
+ * In presenter mode the corner also counts them for the current slide. With reduced motion,
+ * every other view shows those counts still, at the bottom right, instead of floating them.
  *
  * Headmatter, or any slide's frontmatter (both under `polls:`):
  *
@@ -51,11 +52,13 @@ let nextId = 0;
 const lanes = new Map<string, number>();
 
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
+const still = ref(calm.matches);
+calm.addEventListener("change", () => (still.value = calm.matches));
 
 /** Sends one burst of reactions up the side of the slide. */
 function float(counts: Tally): void {
-  if (calm.matches) {
-    return; // the presenter's count still moves
+  if (still.value) {
+    return; // the tally shows the counts instead
   }
   for (const [emoji, count] of Object.entries(counts)) {
     if (!lanes.has(emoji)) {
@@ -99,7 +102,11 @@ const land = (id: number) => {
       <template v-else>{{ f.emoji }}</template>
     </span>
 
-    <p v-if="isPresenter && Object.keys(polls.state.tally).length" class="tally">
+    <p
+      v-if="(isPresenter || still) && Object.keys(polls.state.tally).length"
+      class="tally"
+      :class="{ still: !isPresenter }"
+    >
       <span v-for="(count, emoji) in polls.state.tally" :key="emoji">
         <img v-if="isImage(emoji)" :src="reactionUrl(emoji, base)" alt="" />
         <template v-else>{{ emoji }}</template>
@@ -172,5 +179,11 @@ const land = (id: number) => {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
+}
+/* Where the floaters would rise, clear of the QR code's top right corner. */
+.tally.still {
+  top: auto;
+  bottom: 40px;
+  right: 40px;
 }
 </style>

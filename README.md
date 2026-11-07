@@ -201,7 +201,8 @@ Notes:
   a second tab does not skip it.
 - The server only accepts emoji that the current slide lists.
 - A flood of reactions thins out on screen instead of slowing it down.
-- People who prefer reduced motion see the counts without the floating.
+- With reduced motion, the slide shows the counts in a still badge at its bottom right
+  instead of floating them.
 
 ### Custom emotes
 
