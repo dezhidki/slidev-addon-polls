@@ -184,9 +184,15 @@ for the whole deck in the headmatter, or for one slide in its frontmatter:
 
 ```yaml
 polls:
-  reactions: false # turn off
   reactions: ["👏", "🤯", "❓"] # your own set
   reactionCooldown: 1 # seconds between reactions per person (default 3)
+```
+
+Or turn them off:
+
+```yaml
+polls:
+  reactions: false
 ```
 
 Notes:
@@ -237,10 +243,11 @@ polls:
   the presenter can move them. A phone that joins mid-talk lands on the current slide.
   Slides and drawings sync only with `TOKEN` set on the standalone server.
 - **Drawings:** set `polls.showDrawings: true` and the phones show what the presenter draws
-  with Slidev's pen, and clear when the presenter clears. This works in builds only: the
-  dev server always sends drawings to viewers. Only the presenter's drawings sync. A page
-  whose drawing passes 256 kB stops syncing, with a console warning. Without
-  `showDrawings`, drawings stay on the presenter's machine.
+  with Slidev's pen, and clear when the presenter clears. It needs `showSlides` too; on its
+  own it does nothing. This works in builds only: the dev server always sends drawings to
+  viewers. Only the presenter's drawings sync. A page whose drawing passes 256 kB stops
+  syncing, with a warning in the presenter's console. Without `showDrawings`, drawings stay
+  on the presenter's machine.
 - **Spoilers:** phones load the whole deck, so a quiz's answer can be read in its
   JavaScript. Keep `showSlides` off for a quiz that must stay secret.
 
