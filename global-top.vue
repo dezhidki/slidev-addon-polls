@@ -119,8 +119,9 @@ const land = (id: number) => {
 
 .floater {
   position: absolute;
-  /* Hugs the right edge, where slides keep their margin, so content stays readable. */
-  right: calc(12px + var(--lane) * 24px);
+  /* Hugs the right edge, where slides keep their margin, so content stays readable. 40px is
+     12px of air plus the 28px the sway may carry it right, so it never leaves the slide. */
+  right: calc(40px + var(--lane) * 24px);
   bottom: 40px;
   font-size: calc(26px * var(--size));
   line-height: 1;
@@ -148,8 +149,10 @@ const land = (id: number) => {
   }
 }
 
+/* Slidev's base CSS makes an img a block, which would put the tally's count under it. */
 .floater img,
 .tally img {
+  display: inline-block;
   width: 1em;
   height: 1em;
   object-fit: contain;
