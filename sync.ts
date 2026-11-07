@@ -193,8 +193,8 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
       if (live) {
         emit(pick(live), true);
       }
-      for (const [page, svg] of Object.entries(liveDrawings ?? {})) {
-        if (svg) {
+      for (const [page, svg = ""] of Object.entries(liveDrawings ?? {})) {
+        if (svg || sentDrawings.has(page)) {
           emitDrawing(page, svg);
         }
       }

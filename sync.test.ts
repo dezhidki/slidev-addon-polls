@@ -222,6 +222,18 @@ test("resend sends every drawn page on its own", (t) => {
   assert.deepEqual(drawings.map(data), [{ "1": "a" }, { "3": "c" }]);
 });
 
+test("resend also sends a page cleared since it was sent, so a clear survives a reconnect", (t) => {
+  const { slide, drawWrite, sent, tick } = drawingRig(t);
+  drawWrite({ 1: "a", 2: "b" });
+  tick(100);
+  drawWrite({ 1: "", 2: "b" });
+  tick(100);
+  sent.length = 0;
+  slide.resend();
+  const drawings = sent.filter((m) => m.channel === "drawings");
+  assert.deepEqual(drawings.map(data), [{ "1": "" }, { "2": "b" }]);
+});
+
 test("received drawings reach Slidev as is, but not in the presenter tab", (t) => {
   const { slide, updates, flags } = drawingRig(t);
   const msg: SyncMessage = { type: "sync", channel: "drawings", data: { "1": "<path/>" } };
