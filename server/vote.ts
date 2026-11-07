@@ -51,6 +51,12 @@ function save(key: string, value: unknown): void {
   }
 }
 
+/**
+ * The deck's address, with a trailing slash. The page lives at <base>vote (dev) or
+ * <base>vote/ (static hosts); the socket at <base>polls.
+ */
+const base = location.href.replace(/vote\/?(index\.html)?([?#].*)?$/, "");
+
 /** This phone's id. The server counts one answer per id per round, not per connection. */
 function voterId(): string {
   const saved = load<string>("poll-voter");
@@ -103,6 +109,16 @@ Alpine.data("votePage", () => ({
   coolUntil: load<number>("poll-cool-until") ?? 0,
   /** Read by `cooling` and `wait`; moved on only when a cooldown starts or runs out. */
   now: Date.now(),
+
+  /** The slides' aspect ratio, when the deck shows them here. */
+  slidesRatio: document.documentElement.dataset.slides,
+  showSlides: load<boolean>("poll-slides") ?? true,
+  slidesUrl: `${base}?embedded=true`,
+
+  toggleSlides(): void {
+    this.showSlides = !this.showSlides;
+    save("poll-slides", this.showSlides);
+  },
 
   init(): void {
     this.connect();
@@ -221,12 +237,7 @@ Alpine.data("votePage", () => ({
   // ---- the connection ----------------------------------------------------------------
 
   connect(): void {
-    // The page lives at <base>/vote (dev) or <base>/vote/ (static hosts); the socket at
-    // <base>/polls.
-    const base = location.href
-      .replace(/^http/, "ws")
-      .replace(/vote\/?(index\.html)?([?#].*)?$/, "");
-    socket = new WebSocket(`${base}polls`);
+    socket = new WebSocket(`${base.replace(/^http/, "ws")}polls`);
     socket.onopen = () => {
       this.online = true;
       this.everConnected = true;

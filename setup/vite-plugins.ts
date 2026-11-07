@@ -9,17 +9,32 @@
 import { readFileSync } from "node:fs";
 import type { ResolvedSlidevOptions } from "@slidev/types";
 import type { Plugin } from "vite";
+import type { PollSettings } from "../protocol.ts";
 import { attachPolls } from "../server/polls.ts";
 
 const votePage = new URL("../dist/vote.html", import.meta.url);
 
-/** Read afresh every time, so rebuilding the page shows up without restarting Slidev. */
-function votePageHtml(): Buffer {
+/**
+ * Read afresh every time, so rebuilding the page shows up without restarting Slidev.
+ * A deck that sets `polls.showSlides` gets its aspect ratio on `<html>`, which tells the
+ * page to embed the slides.
+ */
+function votePageHtml(options: ResolvedSlidevOptions): string {
+  let html: string;
   try {
-    return readFileSync(votePage);
+    html = readFileSync(votePage, "utf8");
   } catch {
     throw new Error("slidev-addon-polls: dist/vote.html is missing — run `npm run build`");
   }
+  const config = options.data.config as { polls?: PollSettings; aspectRatio: number };
+  if (!config.polls?.showSlides) {
+    return html;
+  }
+  const root = '<html lang="en">';
+  if (!html.includes(root)) {
+    throw new Error(`slidev-addon-polls: dist/vote.html has no ${root} to mark`);
+  }
+  return html.replace(root, `<html lang="en" data-slides="${config.aspectRatio}">`);
 }
 
 export default (options: ResolvedSlidevOptions): Plugin => ({
@@ -41,13 +56,13 @@ export default (options: ResolvedSlidevOptions): Plugin => ({
         return next();
       }
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.end(votePageHtml());
+      res.end(votePageHtml(options));
     });
   },
 
   // `slidev build`: ship the voting page too. As vote/index.html, so that every static
   // host serves it at /vote.
   generateBundle() {
-    this.emitFile({ type: "asset", fileName: "vote/index.html", source: votePageHtml() });
+    this.emitFile({ type: "asset", fileName: "vote/index.html", source: votePageHtml(options) });
   },
 });

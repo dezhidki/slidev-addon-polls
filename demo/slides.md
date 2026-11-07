@@ -3,8 +3,9 @@ theme: default
 addons:
   - "@/.." # this repo; in your own deck: slidev-addon-polls
 title: Slidev polls demo
-# polls:
-#   url: https://your-public-host/vote
+polls:
+  showSlides: true
+  # url: https://your-public-host/vote
 ---
 
 # Live polls for Slidev

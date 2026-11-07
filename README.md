@@ -197,6 +197,27 @@ Notes:
 - A flood of reactions thins out on screen instead of slowing it down.
 - People who prefer reduced motion see the counts without the floating.
 
+## Live slides on phones
+
+Set `polls.showSlides: true` and the voting page shows the slides above the polls, in the
+same page and click as the presenter. Taps on the slide do nothing. A "Hide slides"
+button on the page turns them off for that phone (the phone remembers), and a hidden deck
+is not loaded at all. Turned sideways, the slides fill the screen and the polls scroll
+below.
+
+```yaml
+polls:
+  showSlides: true
+```
+
+- **Dev server:** the phone loads the deck as a viewer, and Slidev's own sync moves it.
+  The dev server sends modules one by one, so a first load is heavy: 503 requests and
+  15.6 MB on the demo deck (headless Chrome, counting response headers and bodies).
+- **Builds:** the voting page embeds the built deck and follows the presenter through the
+  polling backend (see "Polls with static builds").
+- **Spoilers:** phones load the whole deck, so a quiz's answer can be read in its
+  JavaScript. Keep `showSlides` off for a quiz that must stay secret.
+
 ## Running a poll
 
 The controls appear under each poll, in presenter mode only:
