@@ -26,6 +26,7 @@ import {
   parseClientMessage,
   type Role,
   type ServerMessage,
+  type SharedSync,
   type Tally,
 } from "../protocol.ts";
 
@@ -134,6 +135,11 @@ export function attachPolls(httpServer: UpgradableServer, options: PollOptions =
   /** Slide number to the reactions counted on it. */
   const tally = new Map<number, Tally>();
   let burst: Tally = {};
+  /** The merged data of each `sync` channel, for screens that connect late. */
+  const synced: { shared: SharedSync; drawings: Record<string, string> } = {
+    shared: Object.create(null),
+    drawings: Object.create(null),
+  };
   let stateTimer: ReturnType<typeof setTimeout> | undefined;
   let burstTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -150,6 +156,24 @@ export function attachPolls(httpServer: UpgradableServer, options: PollOptions =
       role = "display";
     }
     clients.set(socket, { role, voter: msg.voter ?? "" });
+    if (role === "display") {
+      if (Object.keys(synced.shared).length) {
+        send(socket, { type: "sync", channel: "shared", data: { ...synced.shared } });
+      }
+      if (Object.keys(synced.drawings).length) {
+        send(socket, { type: "sync", channel: "drawings", data: { ...synced.drawings } });
+      }
+    }
+  }
+
+  /** Keeps what the presenter's deck shows and passes it to the screens as it came. */
+  function relay(msg: Message<"sync">): void {
+    Object.assign(synced[msg.channel], msg.data);
+    for (const [screen, client] of clients) {
+      if (client.role === "display") {
+        send(screen, msg);
+      }
+    }
   }
 
   // Re-defining a poll keeps its votes: Slidev re-mounts slides all the time, and an edited
@@ -384,6 +408,9 @@ export function attachPolls(httpServer: UpgradableServer, options: PollOptions =
       case "react":
         react(socket, msg);
         break;
+      case "sync":
+        relay(msg);
+        break;
     }
   }
 
@@ -423,7 +450,7 @@ export function attachPolls(httpServer: UpgradableServer, options: PollOptions =
         return;
       }
       handle(socket, msg);
-      if (msg.type !== "react") {
+      if (msg.type !== "react" && msg.type !== "sync") {
         broadcast();
       }
     });

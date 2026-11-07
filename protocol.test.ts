@@ -159,3 +159,39 @@ test("a slide's own polls settings beat the deck's, key by key", () => {
   assert.deepEqual(slideReactions({ reactions: "yes" }, undefined).reactions, DEFAULT_REACTIONS);
   assert.deepEqual(slideReactions({ reactions: [1, "👍"] }, undefined).reactions, ["1", "👍"]);
 });
+
+const dataOf = (msg: ReturnType<typeof parseClientMessage>) =>
+  msg?.type === "sync" ? msg.data : msg;
+
+test("sync carries the presenter's slide state, and drawings by page number", () => {
+  const shared = {
+    type: "sync",
+    channel: "shared",
+    data: {
+      page: 3,
+      clicks: 1,
+      clicksTotal: 2,
+      cursor: null,
+      lastUpdate: { id: "a", type: "presenter", time: 5 },
+    },
+  };
+  assert.deepEqual(parseClientMessage(wire(shared)), shared);
+  assert.deepEqual(parseServerMessage(wire(shared)), shared);
+  assert.deepEqual(dataOf(parseClientMessage(wire({ ...shared, data: { page: 1, timer: {} } }))), {
+    page: 1,
+  });
+  const drawings = { type: "sync", channel: "drawings", data: { "3": "<path/>", "4": "" } };
+  assert.deepEqual(parseClientMessage(wire(drawings)), drawings);
+  assert.equal(parseClientMessage(wire({ ...drawings, data: { "3": 7 } })), undefined);
+  assert.equal(
+    parseClientMessage(wire({ ...drawings, data: { title: "<path/>" } })),
+    undefined,
+    "keys are page numbers",
+  );
+  // valibot drops a `__proto__` key instead of refusing the message (see the tally test).
+  assert.deepEqual(
+    dataOf(parseClientMessage('{"type":"sync","channel":"drawings","data":{"__proto__":"x"}}')),
+    {},
+  );
+  assert.equal(parseClientMessage(wire({ type: "sync", channel: "timer", data: {} })), undefined);
+});

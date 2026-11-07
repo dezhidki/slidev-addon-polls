@@ -16,6 +16,7 @@ import {
   parseServerMessage,
   type Role,
   type ServerMessage,
+  type SyncMessage,
 } from "../protocol.ts";
 import { attachPolls } from "./polls.ts";
 
@@ -27,6 +28,7 @@ interface Peer {
   state?: StateMessage;
   reactions?: ReactionsMessage;
   denied: boolean;
+  sync: SyncMessage[];
   /** The close code, once the server has closed the socket. */
   closed: Promise<number>;
   say(msg: ClientMessage): void;
@@ -44,6 +46,7 @@ async function join(url: string, hello: { role?: Role; token?: string; voter?: s
   const socket = new WebSocket(address);
   const peer: Peer = {
     denied: false,
+    sync: [],
     closed: new Promise((resolve) => socket.on("close", resolve)),
     say: (msg) => socket.send(JSON.stringify(msg)),
     close: () => socket.terminate(),
@@ -55,6 +58,9 @@ async function join(url: string, hello: { role?: Role; token?: string; voter?: s
     }
     if (msg?.type === "reactions") {
       peer.reactions = msg;
+    }
+    if (msg?.type === "sync") {
+      peer.sync.push(msg);
     }
     if (msg?.type === "denied") {
       peer.denied = true;
@@ -344,5 +350,34 @@ test("without a server token, a socket opened as presenter may present", async (
   await after(120);
   assert.equal(presenter.denied, false);
   presenter.close();
+  http.close();
+});
+
+test("the presenter's slide state reaches every screen and only screens, also late ones", async () => {
+  const { http, url } = await serve({ token: "secret" });
+  const presenter = await join(url, { role: "presenter", token: "secret" });
+  const screen = await join(url, { role: "display" });
+  const phone = await join(url, { voter: "ann" });
+  screen.say({ type: "sync", channel: "shared", data: { page: 9 } }); // not the presenter
+  phone.say({ type: "sync", channel: "shared", data: { page: 9 } });
+  presenter.say({ type: "sync", channel: "shared", data: { page: 3, clicks: 1, cursor: null } });
+  presenter.say({ type: "sync", channel: "drawings", data: { "3": "<a/>", "4": "<b/>" } });
+  presenter.say({ type: "sync", channel: "drawings", data: { "4": "" } });
+  const big = "x".repeat(100 * 1024);
+  presenter.say({ type: "sync", channel: "drawings", data: { "5": big } });
+  await after(120);
+  assert.equal(screen.sync.length, 4);
+  assert.deepEqual(screen.sync[0]?.data, { page: 3, clicks: 1, cursor: null });
+  assert.equal(phone.sync.length, 0, "phones don't get slide state");
+  assert.equal(presenter.sync.length, 0);
+
+  const late = await join(url, { role: "display" });
+  await after(120);
+  const byChannel = Object.fromEntries(late.sync.map((m) => [m.channel, m.data]));
+  assert.deepEqual(byChannel.shared, { page: 3, clicks: 1, cursor: null });
+  assert.deepEqual(byChannel.drawings, { "3": "<a/>", "4": "", "5": big });
+  for (const peer of [presenter, screen, phone, late]) {
+    peer.close();
+  }
   http.close();
 });

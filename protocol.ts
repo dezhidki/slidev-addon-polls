@@ -83,6 +83,7 @@ export const PRESENTER_ONLY: ReadonlySet<ClientMessage["type"]> = new Set([
   "reveal",
   "reset",
   "remove",
+  "sync",
 ]);
 
 /** Seconds between two reactions from one person, unless the deck says otherwise. */
@@ -178,6 +179,39 @@ const ControlMessageSchema = v.object({
   id: pollId,
 });
 
+/** The presenter's slide state. Keys it does not know (Slidev also sends `timer`) are dropped. */
+const SharedSyncSchema = v.object({
+  page: v.optional(count),
+  clicks: v.optional(count),
+  clicksTotal: v.optional(count),
+  cursor: v.optional(
+    v.nullable(
+      v.object({
+        x: v.number(),
+        y: v.number(),
+        style: v.optional(v.picklist(["cursor", "laser"])),
+      }),
+    ),
+  ),
+  lastUpdate: v.optional(
+    v.nullable(
+      v.object({ id: text(), type: v.picklist(["presenter", "viewer"]), time: v.number() }),
+    ),
+  ),
+});
+
+/**
+ * Drawings are SVG markup keyed by page number. A plain string: a drawing outgrows the
+ * default cap, and the socket's payload limit already bounds it.
+ */
+const DrawingsSchema = v.record(v.pipe(v.string(), v.regex(/^\d+$/)), v.string());
+
+/** What the presenter's deck mirrors to the screens, one message per channel. */
+const SyncMessageSchema = v.variant("channel", [
+  v.object({ type: v.literal("sync"), channel: v.literal("shared"), data: SharedSyncSchema }),
+  v.object({ type: v.literal("sync"), channel: v.literal("drawings"), data: DrawingsSchema }),
+]);
+
 const ClientMessageSchema = v.variant("type", [
   /** First message on every socket: who is connecting. A presenter proves itself on the socket address instead. */
   v.object({
@@ -210,6 +244,7 @@ const ClientMessageSchema = v.variant("type", [
   v.object({ type: v.literal("word"), id: pollId, text: text(MAX_WORD * 4) }),
   /** A phone tapping an emoji. */
   v.object({ type: v.literal("react"), emoji: text(MAX_EMOJI) }),
+  SyncMessageSchema,
 ]);
 
 const ServerMessageSchema = v.variant("type", [
@@ -233,7 +268,14 @@ const ServerMessageSchema = v.variant("type", [
   }),
   /** Reactions since the last burst, for the emoji that float up the slide. */
   v.object({ type: v.literal("reactions"), burst: TallySchema, tally: TallySchema }),
+  /** The presenter's slide state, passed on to the screens unchanged. */
+  SyncMessageSchema,
 ]);
+
+export type SyncMessage = v.InferOutput<typeof SyncMessageSchema>;
+
+/** The `shared` channel's data. */
+export type SharedSync = v.InferOutput<typeof SharedSyncSchema>;
 
 export type ControlMessage = v.InferOutput<typeof ControlMessageSchema>;
 

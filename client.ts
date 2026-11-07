@@ -254,6 +254,9 @@ class PollsClient {
       this.state.denied = true;
       return;
     }
+    if (msg.type === "sync") {
+      return; // Slide state; nothing here uses it yet.
+    }
     if (msg.type === "reactions") {
       this.state.tally = msg.tally;
       this.state.burst = msg.burst;
