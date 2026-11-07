@@ -156,6 +156,14 @@ export function attachPolls(httpServer: UpgradableServer, options: PollOptions =
       role = "display";
     }
     clients.set(socket, { role, voter: msg.voter ?? "" });
+    // A fresh presenter tab (a reload, a later talk) has no drawings and resends only what it
+    // has, so strokes kept from before would stay on every screen, and its Clear can't reach
+    // them. Wipe them everywhere; the resend that follows repaints the tab's own.
+    if (role === "presenter" && Object.keys(synced.drawings).length) {
+      const cleared = Object.fromEntries(Object.keys(synced.drawings).map((page) => [page, ""]));
+      relay({ type: "sync", channel: "drawings", data: cleared });
+      synced.drawings = Object.create(null);
+    }
     if (role === "display") {
       if (Object.keys(synced.shared).length) {
         send(socket, { type: "sync", channel: "shared", data: { ...synced.shared } });

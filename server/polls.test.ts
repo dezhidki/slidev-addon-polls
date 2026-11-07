@@ -399,3 +399,23 @@ test("the presenter's slide state reaches every screen and only screens, also la
   }
   http.close();
 });
+
+test("a new presenter tab wipes the old tab's drawings from the screens, also from late ones", async () => {
+  const { http, url } = await serve({ token: "secret" });
+  const presenter = await join(url, { role: "presenter", token: "secret" });
+  const screen = await join(url, { role: "display" });
+  presenter.say({ type: "sync", channel: "drawings", data: { "3": "<a/>", "4": "<b/>" } });
+  await after(120);
+  const reloaded = await join(url, { role: "presenter", token: "secret" });
+  await after(120);
+  assert.equal(screen.sync.length, 2);
+  assert.deepEqual(screen.sync[1]?.data, { "3": "", "4": "" });
+
+  const late = await join(url, { role: "display" });
+  await after(120);
+  assert.equal(late.sync.length, 0, "no stale strokes for a screen that joins later");
+  for (const peer of [presenter, screen, reloaded, late]) {
+    peer.close();
+  }
+  http.close();
+});
