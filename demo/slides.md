@@ -3,7 +3,8 @@ theme: default
 addons:
   - "@/.." # this repo; in your own deck: slidev-addon-polls
 title: Slidev polls demo
-# pollUrl: https://your-public-host/vote
+# polls:
+#   url: https://your-public-host/vote
 ---
 
 # Live polls for Slidev
@@ -47,7 +48,8 @@ Go back, close the poll, and come here again to see the phones switch.
 -->
 
 ---
-reactions: ["👏", "🤯", "❓"]
+polls:
+  reactions: ["👏", "🤯", "❓"]
 ---
 
 # Another normal slide
@@ -57,7 +59,8 @@ arrive here.
 
 ```yaml
 ---
-reactions: ["👏", "🤯", "❓"]
+polls:
+  reactions: ["👏", "🤯", "❓"]
 ---
 ```
 

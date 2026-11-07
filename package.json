@@ -1,6 +1,6 @@
 {
   "name": "slidev-addon-polls",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "Live polls for Slidev — choice polls, quizzes and word clouds that the audience answers on their phones",
   "license": "MIT",

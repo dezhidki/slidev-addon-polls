@@ -160,6 +160,19 @@ If you also want to add a separate QR code (e.g., on the first slide), you can u
 `<PollQr class="w-60" />`
 ```
 
+### Settings
+
+All settings of this addon live under one `polls:` key in the headmatter. 0.5.0 moved them
+there; the old top-level `pollUrl`, `reactions` and `reactionCooldown` no longer work.
+
+| Key                | Meaning                                       | Per slide |
+| ------------------ | --------------------------------------------- | --------- |
+| `url`              | Voting page address for the QR code           | no        |
+| `reactions`        | `false`, or a list of emoji                   | yes       |
+| `reactionCooldown` | Seconds between two reactions from one person | yes       |
+| `showSlides`       | Whether phones can follow the slides          | no        |
+| `showDrawings`     | Whether phones show the presenter's drawings  | no        |
+
 ### Reactions
 
 The voting page has a row of emoji. Tapping one floats it up the side of the slide. In
@@ -170,9 +183,10 @@ Defaults: on, with 👍 👎 🤔 ❤️, and one reaction per person every 3 se
 for the whole deck in the headmatter, or for one slide in its frontmatter:
 
 ```yaml
-reactions: false # turn off
-reactions: ["👏", "🤯", "❓"] # your own set
-reactionCooldown: 1 # seconds between reactions per person (default 3)
+polls:
+  reactions: false # turn off
+  reactions: ["👏", "🤯", "❓"] # your own set
+  reactionCooldown: 1 # seconds between reactions per person (default 3)
 ```
 
 Notes:
@@ -198,11 +212,12 @@ Answers are kept in memory for as long as the slidev server is running.
 
 The QR code and address on the slides come from the first of these that applies:
 
-1. `pollUrl` in the headmatter. Set this when your public address differs from the one
+1. `polls.url` in the headmatter. Set this when your public address differs from the one
    you browse, e.g. with `slidev --remote --tunnel`:
 
    ```yaml
-   pollUrl: https://something.trycloudflare.com/vote
+   polls:
+     url: https://something.trycloudflare.com/vote
    ```
 
 2. The address you opened the slides at, unless it is `localhost`.

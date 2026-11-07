@@ -83,6 +83,34 @@ export const PRESENTER_ONLY: ReadonlySet<ClientMessage["type"]> = new Set([
 /** Seconds between two reactions from one person, unless the deck says otherwise. */
 export const DEFAULT_COOLDOWN = 3;
 
+/** The emoji phones offer when the deck does not say otherwise. */
+export const DEFAULT_REACTIONS = ["👍", "👎", "🤔", "❤️"];
+
+/** The deck's `polls:` headmatter. A slide's own `polls:` may set only the reaction keys. */
+export interface PollSettings {
+  /** Address of the voting page to put in the QR code, for a deck hosted somewhere public. */
+  url?: string;
+  /** `false` for no reactions, a list of emoji for your own set, anything else = default. */
+  reactions?: unknown;
+  /** Seconds one person waits between two reactions. */
+  reactionCooldown?: number;
+  showSlides?: boolean;
+  showDrawings?: boolean;
+}
+
+/** The reactions and cooldown a slide has: its own `polls:` beats the deck's, key by key. */
+export function slideReactions(
+  deck: PollSettings,
+  slide: PollSettings | undefined,
+): { reactions: string[]; cooldown: number | undefined } {
+  const setting = slide?.reactions ?? deck.reactions;
+  return {
+    reactions:
+      setting === false ? [] : Array.isArray(setting) ? setting.map(String) : DEFAULT_REACTIONS,
+    cooldown: slide?.reactionCooldown ?? deck.reactionCooldown,
+  };
+}
+
 /** Longest word a cloud keeps; the server trims and cuts what it is sent to this. */
 export const MAX_WORD = 40;
 /** Longest voter id, which the server keeps one of per person who has answered. */

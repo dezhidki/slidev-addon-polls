@@ -13,6 +13,7 @@ import configs from "#slidev/configs";
 import {
   type ClientMessage,
   type PollDef,
+  type PollSettings,
   type PollView,
   parseServerMessage,
   type Tally,
@@ -21,18 +22,8 @@ import {
 /** Milliseconds before a lost or refused connection is tried again. */
 const RETRY_MS = 2000;
 
-/** Headmatter this addon reads, which Slidev's own config type does not know about. */
-export interface PollConfig {
-  /** Address of the voting page to put in the QR code, for a deck hosted somewhere public. */
-  pollUrl?: string;
-  /** `false` for no reactions, a list of emoji for your own set, anything else = default. */
-  reactions?: unknown;
-  /** Seconds one person waits between two reactions. */
-  reactionCooldown?: number;
-}
-
-/** The deck's headmatter, including this addon's own keys. */
-export const pollConfig = configs as typeof configs & PollConfig;
+/** The deck's `polls:` headmatter. */
+export const settings: PollSettings = (configs as { polls?: PollSettings }).polls ?? {};
 
 /** A poll this deck declares, and how many copies of it are on screen right now. */
 interface MountedPoll {
@@ -181,7 +172,7 @@ class PollsClient {
 
   /** First thing said on a new socket: who we are, then what our screen shows. */
   #greet(): void {
-    const token = typeof pollConfig.remote === "string" ? pollConfig.remote : undefined;
+    const token = typeof configs.remote === "string" ? configs.remote : undefined;
     this.send({ type: "hello", role: this.#presenter ? "presenter" : "display", token });
     this.#announce();
   }

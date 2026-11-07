@@ -4,10 +4,11 @@
  * Each emoji rises from its own spot, so a hall of hearts reads as one stream of hearts.
  * In presenter mode the corner also counts them for the current slide.
  *
- * Headmatter, or any slide's frontmatter:
+ * Headmatter, or any slide's frontmatter (both under `polls:`):
  *
- *     reactions: false                 # off
- *     reactions: ["👏", "😮", "❓"]     # your own set
+ *     polls:
+ *       reactions: false               # off
+ *       reactions: ["👏", "😮", "❓"]   # your own set
  *
  * @author Claude
  * @author Denis Zhidkikh

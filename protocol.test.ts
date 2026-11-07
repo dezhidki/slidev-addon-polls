@@ -10,7 +10,12 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseClientMessage, parseServerMessage } from "./protocol.ts";
+import {
+  DEFAULT_REACTIONS,
+  parseClientMessage,
+  parseServerMessage,
+  slideReactions,
+} from "./protocol.ts";
 
 const wire = (msg: unknown) => JSON.stringify(msg);
 
@@ -137,4 +142,21 @@ test("a tally key named __proto__ cannot reach a prototype", () => {
   const burst = msg?.type === "reactions" ? msg.burst : {};
   assert.deepEqual(burst, { "👍": 3 });
   assert.equal(Object.getPrototypeOf({}), Object.prototype);
+});
+
+test("a slide's own polls settings beat the deck's, key by key", () => {
+  assert.deepEqual(slideReactions({}, undefined), {
+    reactions: DEFAULT_REACTIONS,
+    cooldown: undefined,
+  });
+  const deck = { reactions: ["👏"], reactionCooldown: 1 };
+  assert.deepEqual(slideReactions(deck, undefined), { reactions: ["👏"], cooldown: 1 });
+  assert.deepEqual(slideReactions(deck, { reactions: ["❓"] }), { reactions: ["❓"], cooldown: 1 });
+  assert.deepEqual(slideReactions(deck, { reactions: false }), { reactions: [], cooldown: 1 });
+  assert.deepEqual(slideReactions({ reactions: false }, { reactionCooldown: 5 }), {
+    reactions: [],
+    cooldown: 5,
+  });
+  assert.deepEqual(slideReactions({ reactions: "yes" }, undefined).reactions, DEFAULT_REACTIONS);
+  assert.deepEqual(slideReactions({ reactions: [1, "👍"] }, undefined).reactions, ["1", "👍"]);
 });
