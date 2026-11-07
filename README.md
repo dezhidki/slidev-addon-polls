@@ -2,23 +2,23 @@
 
 [![AI License](https://oss.korext.com/api/ai-license-badge/unknown/unknown)](https://oss.korext.com/ai-license)
 
-Simple live polls for [Slidev](https://sli.dev) slides. Easy to set up, works via dev server or as a standalone.
+Live polls, quizzes, word clouds and reactions for [Slidev](https://sli.dev) slides. The
+audience answers on their phones. The poll backend runs inside Slidev's own dev server, so
+there is no extra server; a static build uses a small standalone one.
 
 <div align="center">
 <video src="https://github.com/user-attachments/assets/debf54d3-6469-4dad-ad90-9fa196df4d1c"></video>
 </div>
 
-No extra server: the poll backend runs inside Slidev's own dev server.
-
 ## Quick start
 
-1. Install from GitHub using your favourite package manager, e.g.:
+1. Install the addon from GitHub (any package manager works):
 
    ```bash
    npm install github:dezhidki/slidev-addon-polls
    ```
 
-2. Add the addon to your deck's headmatter and put a poll on a slide:
+2. Add it to your deck's headmatter and put a poll on a slide:
 
    ```md
    ---
@@ -29,11 +29,23 @@ No extra server: the poll backend runs inside Slidev's own dev server.
    <Poll question="Tabs or spaces?" :options="['Tabs', 'Spaces']" />
    ```
 
-3. Start Slidev with a presenter password: `slidev --remote=your-password`
+3. Start Slidev with a presenter password:
+
+   ```bash
+   slidev --remote=your-password
+   ```
+
 4. Open the **presenter view** and click **Open voting** under the poll.
 5. The audience scans the QR code on the slide, or opens `/vote`.
 
-## Supported poll types
+You should see: phones show the question and its options. On the slide, the bars fill in
+as votes arrive, and the status line under the poll reads `Voting open` with the number of
+answers.
+
+`--remote` opens the dev server to the network. Read [Security](#security) before a large
+or untrusted room.
+
+## Poll types
 
 |                                      |                                     |
 | ------------------------------------ | ----------------------------------- |
@@ -42,83 +54,39 @@ No extra server: the poll backend runs inside Slidev's own dev server.
 | ![](demo/screenshots/word_cloud.png) | ![](demo/screenshots/reactions.gif) |
 | **Word clouds**                      | **Reactions**                       |
 
-### Poll
+### Choice poll
 
 ```md
 <Poll question="Tabs or spaces?" :options="['Tabs', 'Spaces']" />
 ```
 
-Required options
-
-- `question` (string): the question to show
-- `options` (array): the answer options
-
-Notes:
-
-- You can add more polls to the same slide by simply adding multiple `<Poll/>` elements.
-  They (usually) should stack nicely.
-- **Keep answers when you move or edit a poll:** give it an `id`, unique in the deck:
-  `<Poll id="tabs" question="Tabs or spaces?" … />`. Without one, a poll is known by its
-  slide number and question, so inserting a slide before it or rewording its question
-  starts it afresh. Either way, changing the number of options does too. Other edits keep
-  the answers, counted by position: reordering options moves their votes to other options.
-- **Big "join now" QR code:** `<PollQr class="w-60" />` shows only the QR code. Put it on
-  an early slide so the back rows can scan it.
-
-#### Set poll ID to keep the answers saved
-
-By default, the poll is identified by slide number, question and option contents.
-This means that changing any one of them will reset the poll, which may be annoying if you tend to edit polls live.
-To preserve poll answers while allowing to change poll position or contents, give the poll an ID:
-
-```md
-<Poll id="my-poll-1" question="Speed of an unladen swallow?" :options="['European?', 'African?']" />
-```
-
-#### Hide poll answers until poll end
-
-By default, a non-quiz poll's answers are shown on the slides live during voting.
-To show the results after the voting is closed, use `blind` option:
-
-```md
-<Poll question="Which talk next?" :options="['Rust', 'Go']" blind />
-```
+- `question` (string, required): the question to show.
+- `options` (array, required): the answer options.
+- More than one poll on a slide: add more `<Poll />` elements. They usually stack well.
 
 ### Quiz
-
-A quiz is just a poll with the correct option specified using the `correct` attribute:
 
 ```md
 <Poll question="What is 2 + 2?" :options="['3', '4', '5']" :correct="1" />
 ```
 
-Notes:
+`correct` is the index of the right option, counted from 0.
 
-- The presenter's view has a separate "Review answer" button that reveals the answer after the poll closes.
-- Quizzes are always `blind` by default, i.e. the answers aren't shown until the poll is closed.
+- Quizzes are always blind: the room sees the results once voting closes.
+- To show the right answer, the presenter clicks **Reveal answer**.
 
 ### Word cloud
-
-Leaving out the `options` attribute turns the question into a word cloud:
 
 ```md
 <Poll question="What do you think of me?" />
 ```
 
-Notes:
+Leave out `options` to get a word cloud.
 
-- During the vote, the presenter can moderate the answers. Clicking on the answer in presenter view removes it and bans the word.
-- The word cloud is `blind` by default to allow the abovementioned moderation.
+- While voting is open, only the presenter sees the words, so they can be moderated first.
+- To moderate, click a word in the presenter view. It is removed, and the word is banned.
 
-## Other cool features
-
-### Use `<PollSet />` to chain questions
-
-`<PollSet>` allows to specify multiple polls that are chained together.
-The chained polls are shown one at a time; moving to the next fragment moves to the next poll.
-
-This is mainly useful if you want to fit multiple (e.g. 3+) polls on the same slide and maybe also have
-some other content shown at the same time (e.g. a piece of code).
+### Several polls on one slide
 
 ```md
 <PollSet :polls="[
@@ -127,60 +95,70 @@ some other content shown at the same time (e.g. a piece of code).
 ]" />
 ```
 
-### QR code
+`<PollSet>` shows its polls one at a time. Each click on the slide moves to the next poll,
+and the phones follow. Use it for 3 or more polls on one slide, or to keep other content
+(such as code) on screen beside them.
 
-By default, a QR code is shown on all pages that have polls.
-It sits in the top right corner, next to the title, with its address beside it. It fills
-the empty band above the slide content, so it never overlaps the content and is the same
-size on every slide with a one-line title. A long title wraps before reaching it.
-
-On a slide without a title, or with a theme that leaves little room above the content,
-the code keeps its full size and the poll makes room for it.
-
-To stay readable at that size, the code uses the lowest error-correction level and an
-upper-case scheme and host (QR codes store capitals more densely).
-
-Size one poll's code with the `qrSize` prop:
+### Keep answers when you edit a poll
 
 ```md
-<Poll question="Tabs or spaces?" :options="['Tabs', 'Spaces']" qr-size="180px" />
+<Poll id="my-poll-1" question="Speed of an unladen swallow?" :options="['European?', 'African?']" />
 ```
 
-Or set the defaults for the whole deck in its `style.css`:
+Give the poll an `id`, unique in the deck. Then you can move it or reword it live.
 
-| Variable          | Does                                 | Default |
-| ----------------- | ------------------------------------ | ------- |
-| `--poll-qr-size`  | Its size, capped by the title's band | `140px` |
-| `--poll-qr-top`   | Distance from the top                | `12px`  |
-| `--poll-qr-right` | Distance from right                  | `32px`  |
+- Without an `id`, a poll is known by its slide number and question. Inserting a slide
+  before it, or rewording its question, starts it afresh.
+- With or without an `id`, changing the number of options starts it afresh.
+- Other edits keep the answers, counted by position: reordering options moves their votes
+  to other options.
 
-If you also want to add a separate QR code (e.g., on the first slide), you can use the `<PollQr />` component:
+### Hide results until voting closes
 
 ```md
-`<PollQr class="w-60" />`
+<Poll question="Which talk next?" :options="['Rust', 'Go']" blind />
 ```
 
-### Settings
+Without `blind`, the slide shows a choice poll's results live while voting is open. With
+it, the room sees them once voting closes.
 
-All settings of this addon live under one `polls:` key in the headmatter. 0.5.0 moved them
-there; the old top-level `pollUrl`, `reactions` and `reactionCooldown` no longer work.
+## Running a poll
 
-| Key                | Meaning                                       | Per slide |
-| ------------------ | --------------------------------------------- | --------- |
-| `url`              | Voting page address for the QR code           | no        |
-| `reactions`        | `false`, or a list of emoji                   | yes       |
-| `reactionCooldown` | Seconds between two reactions from one person | yes       |
-| `showSlides`       | Whether phones can follow the slides          | no        |
-| `showDrawings`     | Whether phones show the presenter's drawings  | no        |
+In presenter mode, each poll has these controls under it:
 
-### Reactions
+- **Open voting / Close voting**: phones can answer only while voting is open, once per
+  person. Until voting closes they can change their answer, e.g. after a misclick. After a
+  close, the button reads **Reopen voting**.
+- **Reveal answer** (quiz only): closes voting and marks the right option everywhere.
+- **Reset**: clears the answers. Click it twice within 3 seconds, so a misclick is safe.
+- **A word in a word cloud**: click it to remove and ban it.
 
-The voting page has a row of emoji. Tapping one floats it up the side of the slide. In
-presenter mode, a corner of the slide counts reactions per slide, so "thumbs up if this
-made sense" is readable at a glance.
+## Settings
 
-Defaults: on, with 👍 👎 🤔 ❤️, and one reaction per person every 3 seconds. Change them
-for the whole deck in the headmatter, or for one slide in its frontmatter:
+**Upgrading from before 0.5.0?** Move the top-level `pollUrl`, `reactions` and
+`reactionCooldown` under `polls:`, as `url`, `reactions` and `reactionCooldown`. 0.5.0 moved
+them there, and the old top-level keys no longer work.
+
+Every setting lives under one `polls:` key in the headmatter:
+
+```yaml
+polls:
+  reactions: ["👏", "🤯", "❓"]
+  showSlides: true
+```
+
+| Key                | Does                                           | Default                                          | Per slide |
+| ------------------ | ---------------------------------------------- | ------------------------------------------------ | --------- |
+| `url`              | Voting page address for the QR code            | Worked out, see [address](#voting-page-address)  | no        |
+| `reactions`        | `false`, or a list of emoji and image paths    | 👍 👎 🤔 ❤️                                      | yes       |
+| `reactionCooldown` | Seconds between two reactions from one person  | `3`                                              | yes       |
+| `showSlides`       | Whether phones can follow the slides           | off                                              | no        |
+| `showDrawings`     | Whether phones show the presenter's drawings   | off; needs `showSlides`                          | no        |
+
+"Per slide" means a slide's own frontmatter can set it under `polls:`, and that beats the
+headmatter for that slide.
+
+## Reactions
 
 ```yaml
 polls:
@@ -188,130 +166,231 @@ polls:
   reactionCooldown: 1 # seconds between reactions per person (default 3)
 ```
 
-Or turn them off:
+Put this in the headmatter for the whole deck, or in a slide's frontmatter for that slide.
+To turn reactions off:
 
 ```yaml
 polls:
   reactions: false
 ```
 
-Notes:
+The voting page has a row of emoji. Tapping one floats it up the side of the slide. In
+presenter mode, a corner of the slide counts the reactions on the current slide, so a
+"thumbs up if this made sense" shows up as a number.
 
-- The server enforces the cooldown per person, not per connection. Reloading or opening
-  a second tab does not skip it.
+Defaults: on, with 👍 👎 🤔 ❤️, and one reaction per person every 3 seconds.
+
+- The server enforces the cooldown per person, not per connection. Reloading or opening a
+  second tab does not skip it.
 - The server only accepts emoji that the current slide lists.
 - A flood of reactions thins out on screen instead of slowing it down.
-- With reduced motion, the slide shows the counts in a still badge at its bottom right
-  instead of floating them.
+- With reduced motion, nothing floats. Every view but the presenter's shows the counts in
+  a still badge at the slide's bottom right; the presenter keeps the corner count.
 
 ### Custom emotes
 
-A reaction can be an image instead of an emoji: list its path, and phones show it on the
-button, the projector floats it, and the presenter's count shows it.
-
-```yaml
-polls:
-  reactions: ["👏", "emotes/party.png", "emotes/wave.gif"]
-```
-
-- Put the files in the deck's `public/` folder. A path is read from the deck's base, so
-  `emotes/party.png` is `public/emotes/party.png`.
-- Extensions: `.png`, `.apng`, `.gif`, `.webp`, `.avif`, `.svg`, `.jpg`, `.jpeg`.
-- Every phone downloads each image, so keep each to tens of kB.
-- A full URL (`https://...`) makes phones fetch it from that host.
-- The deck preloads every emote, so the first tap floats at once.
-- Animated images keep playing on phone buttons with reduced motion; only the floating
-  on the big screen stops.
-
-## Live slides on phones
-
-Set `polls.showSlides: true` and the voting page shows the slides above the polls, in the
-same page and click as the presenter. Taps on the slide do nothing. A "Hide slides"
-button on the page turns them off for that phone (the phone remembers), and a hidden deck
-is not loaded at all. Turned sideways, the slides and the polls sit side by side, and the
-polls scroll on their own.
-
-```yaml
-polls:
-  showSlides: true
-```
-
-- **Dev server:** the phone loads the deck as a viewer, and Slidev's own sync moves it.
-  The dev server sends modules one by one, so a first load is heavy: 503 requests and
-  15.6 MB on the demo deck (headless Chrome, counting response headers and bodies).
-- **Builds:** the voting page embeds the built deck. The addon syncs the presenter's page,
-  clicks and pointer through the poll server (see "Polls with static builds"), and only
-  the presenter can move them. A phone that joins mid-talk lands on the current slide.
-  Slides and drawings sync only with `TOKEN` set on the standalone server.
-- **Drawings:** set `polls.showDrawings: true` and the phones show what the presenter draws
-  with Slidev's pen, and clear when the presenter clears. It needs `showSlides` too; on its
-  own it does nothing. This works in builds only: the dev server always sends drawings to
-  viewers. Only the presenter's drawings sync. A page whose drawing passes 256 kB stops
-  syncing, with a warning in the presenter's console. Without `showDrawings`, drawings stay
-  on the presenter's machine.
-- **QR codes:** the phones' copy of the slides leaves them out.
-- **Spoilers:** phones load the whole deck, so a quiz's answer can be read in its
-  JavaScript. Keep `showSlides` off for a quiz that must stay secret.
-
-## Running a poll
-
-The controls appear under each poll, in presenter mode only:
-
-- **Open voting / Close voting**: phones can answer only while voting is open, once per
-  person. Until voting closes they can change their answer, e.g. after a misclick.
-- **Reveal answer** (quiz only): closes voting and marks the right option everywhere.
-- **Reset**: clears the answers. Click it twice within 3 seconds, so a misclick is safe.
-
-Answers are kept in memory for as long as the slidev server is running.
-
-## Setting the voting page URL
-
-The QR code and address on the slides come from the first of these that applies:
-
-1. `polls.url` in the headmatter. Set this when your public address differs from the one
-   you browse, e.g. with `slidev --remote --tunnel`:
+1. Put the image in the deck's `public/` folder, e.g. `public/emotes/party.png`.
+2. List its path in `polls.reactions`:
 
    ```yaml
    polls:
-     url: https://something.trycloudflare.com/vote
+     reactions: ["👏", "emotes/party.png", "emotes/wave.gif"]
    ```
 
+You should see: phones show the image on its button, the projector floats it, and the
+presenter's count shows it.
+
+File rules:
+
+- Extensions: `.png`, `.apng`, `.gif`, `.webp`, `.avif`, `.svg`, `.jpg`, `.jpeg`.
+- A path is read from the deck's base, so `emotes/party.png` is `public/emotes/party.png`.
+- A full URL (`https://...`) makes phones fetch it from that host.
+- Every phone downloads each image, so keep each to tens of kB.
+
+Behaviour:
+
+- The deck preloads every emote, so the first tap floats at once.
+- Animated images keep playing on phone buttons with reduced motion; only the floating on
+  the big screen stops.
+
+## QR code
+
+Every slide with a poll shows a QR code in its top right corner. For a big "join now" code
+without a poll, e.g. on an early slide so the back rows can scan it:
+
+```md
+<PollQr class="w-60" />
+```
+
+It shows the code and the voting page address.
+
+To size one poll's code:
+
+```md
+<Poll question="Tabs or spaces?" :options="['Tabs', 'Spaces']" qr-size="180px" />
+```
+
+To set the defaults for the whole deck, set these in its `style.css`:
+
+| Variable          | Does                                 | Default |
+| ----------------- | ------------------------------------ | ------- |
+| `--poll-qr-size`  | Its size, capped by the title's band | `140px` |
+| `--poll-qr-top`   | Distance from the top                | `12px`  |
+| `--poll-qr-right` | Distance from right                  | `32px`  |
+
+Where it sits:
+
+- Beside the title, with its address next to it, in the empty band above the slide's
+  content. It never overlaps the content.
+- It is the same size on every slide with a one-line title. A long title wraps before
+  reaching it.
+- On a slide without a title, or with a theme that leaves little room above the content,
+  the code keeps its full size and the poll makes room for it.
+- To stay readable at that size, it uses the lowest error-correction level and an
+  upper-case scheme and host (QR codes store capitals more densely).
+
+## Voting page address
+
+Set `polls.url` when your public address differs from the one you browse, e.g. with
+`slidev --remote --tunnel`:
+
+```yaml
+polls:
+  url: https://something.trycloudflare.com/vote
+```
+
+The QR code and the address on the slides come from the first of these that applies:
+
+1. `polls.url` in the headmatter.
 2. The address you opened the slides at, unless it is `localhost`.
 3. The dev server's LAN address.
 
-Phones must be able to reach that address. Some networks block devices
-from reaching each other. There, use `--tunnel` or host the deck on a server.
+A `<PollQr url="…" />` uses its own `url` before all three.
 
-## PDF export
+Phones must be able to reach that address. Some networks block devices from reaching each
+other. There, use `--tunnel` or host the deck on a server.
 
-The PDF export _should_ generally work via `slidev export`.
-The PDF export prints each poll as its question and lettered options only: no bars, QR
-code or controls. A `<PollSet>` prints all its questions one under another, or one per
-page with `--with-clicks`.
+## Live slides on phones
 
-## Polls with static builds
+1. Turn it on in the headmatter:
 
-You can technically get polls working with static Slived slides.
-Running `slidev build` with the addon enabled will place the voting page `vote/index.html` into the build output folder.
-In addition to that, you will need to run your own polling backend as follows:
+   ```yaml
+   polls:
+     showSlides: true
+   ```
 
-1. Run the standalone backend:
+2. Start the deck: `slidev --remote=your-password`, or a build with the standalone server
+   and `TOKEN` set (see [Static builds](#static-builds)).
+3. Phones open `/vote`, or scan the QR code.
+
+You should see: each phone shows the slides above the polls, on the same page and click as
+the presenter.
+
+On the phone:
+
+- Taps on the slide do nothing.
+- Turned sideways, the slides and the polls sit side by side, and the polls scroll on
+  their own.
+- A **Hide slides** button turns the slides off for that phone. The phone remembers, and a
+  hidden deck is not loaded at all.
+- The phone's copy of the slides leaves out the QR codes.
+
+Dev server or build:
+
+- **Dev server:** the phone loads the deck as a viewer, and Slidev's own sync moves it. The
+  first load is heavy; see [Known limits](#known-limits).
+- **Build:** the voting page embeds the built deck. The addon syncs the presenter's page,
+  clicks and pointer through the poll server, and only the presenter can move them. A
+  phone that joins mid-talk lands on the current slide. This needs `TOKEN` set on the
+  standalone server.
+
+### Drawings
+
+1. Add `showDrawings` next to `showSlides`:
+
+   ```yaml
+   polls:
+     showSlides: true
+     showDrawings: true
+   ```
+
+2. Draw with Slidev's pen in the presenter view.
+
+You should see: phones show what the presenter draws, and clear when the presenter clears.
+
+- `showDrawings` needs `showSlides`; on its own it does nothing.
+- It matters in builds only: the dev server always sends drawings to viewers.
+- Only the presenter's drawings sync. Without `showDrawings`, a build keeps drawings on the
+  presenter's machine.
+- For the size limit, see [Known limits](#known-limits).
+
+## Static builds
+
+1. Build the deck. With the addon enabled, the output folder gets the voting page at
+   `vote/index.html`.
+
+   ```bash
+   slidev build
+   ```
+
+2. Run the standalone poll server, with your presenter password as `TOKEN`:
 
    ```bash
    PORT=3031 TOKEN=your-remote-password node node_modules/slidev-addon-polls/server/standalone.ts
    ```
 
-   The server is TypeScript that Node runs as it stands (v22.18+ or v23.6+). On an older
-   Node, add `--experimental-strip-types`.
+   Node runs this TypeScript as it stands on v22.18+ or v23.6+. On an older Node, add
+   `--experimental-strip-types`.
 
-2. Proxy `<deck url>/polls` to it, including WebSocket upgrades.
-
-3. Present from `<deck url>/presenter?password=your-remote-password`. The deck keeps the
+3. Proxy `<deck url>/polls` to it, including WebSocket upgrades.
+4. Present from `<deck url>/presenter?password=your-remote-password`. The deck keeps the
    password for the tab, so a reload without it still presents.
+5. Phones open `<deck url>/vote`, or scan the QR code.
 
-With `slidev --remote`, Slidev hands the password to every browser that loads the deck
-(`/@slidev/configs`), and its sync takes updates from anyone. For a large or untrusted
-room, serve a build instead.
+You should see: the presenter's polls show **Open voting**. If the status line under a poll
+reads `Poll server offline`, the proxy does not reach the poll server. If the controls read
+`The poll server rejected the presenter password.`, the password and `TOKEN` differ.
+
+## PDF export
+
+```bash
+slidev export
+```
+
+The export _should_ work. It prints each poll as its question and lettered options only: no
+bars, QR code or controls. A `<PollSet>` prints all its questions one under another, or one
+per page with `--with-clicks`.
+
+## Security
+
+- **Dev server (`slidev --remote`):** Slidev hands the password to every browser that loads
+  the deck (`/@slidev/configs`), and its sync takes updates from anyone. For a large or
+  untrusted room, serve a build instead.
+- **No password:** without `TOKEN` on the standalone server, or with a bare `--remote` on
+  the dev server, anyone may present: open, close, reveal and reset polls, and remove
+  words. The standalone server warns about this when it starts.
+- **Builds need `TOKEN` for live slides:** the standalone server syncs slides and drawings
+  to phones only when `TOKEN` is set. Without it anyone may present, and could then move
+  every phone's slides or run script on them through a drawing.
+- **Quiz answers are readable in the deck's JavaScript.** With `showSlides`, every phone
+  loads the whole deck, so keep it off for a quiz that must stay secret. Keeping it off
+  stops phones from loading the deck, but anyone who opens the deck's own address (the
+  voting address without `/vote`) can still read the answer.
+
+## Known limits
+
+Live slides:
+
+- On the dev server, a phone's first load of the slides is heavy, because the dev server
+  sends modules one by one: 503 requests and 15.6 MB on the demo deck (headless Chrome,
+  counting response headers and bodies).
+- A page whose drawing passes 256 kB stops syncing, with a warning in the presenter's
+  console.
+
+Polls:
+
+- Answers are kept in memory only, for as long as the poll server runs (the dev server, or
+  the standalone one).
 
 ## Development
 
@@ -319,7 +398,7 @@ room, serve a build instead.
 npm install     # also builds the voting page
 npm run build   # rebuild dist/vote.html after changing server/vote.*
 npm run dev     # demo deck with --remote (builds first)
-npm test        # the protocol's parsers and the server
+npm test        # the protocol's parsers, the slide sync and the server
 npm run typecheck
-npm run lint
+npm run lint    # biome
 ```
