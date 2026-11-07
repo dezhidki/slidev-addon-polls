@@ -17,7 +17,7 @@
 import { useNav } from "@slidev/client";
 import { computed, ref, watch } from "vue";
 import { polls, settings } from "./client";
-import { isImage, reactionUrl, slideReactions, type Tally } from "./protocol.ts";
+import { isImage, type PollSettings, reactionUrl, slideReactions, type Tally } from "./protocol.ts";
 
 const { isPresenter, isPrintMode, slides } = useNav();
 
@@ -27,9 +27,11 @@ const base = import.meta.env.BASE_URL;
 const images = computed(() =>
   [
     ...new Set(
-      slides.value.flatMap(
-        (route) => slideReactions(settings, route.meta?.slide?.frontmatter?.polls).reactions,
-      ),
+      slides.value.flatMap((route) => {
+        // Slidev leaves `route.meta.slide` untyped here.
+        const info = route.meta?.slide as { frontmatter?: { polls?: PollSettings } } | undefined;
+        return slideReactions(settings, info?.frontmatter?.polls).reactions;
+      }),
     ),
   ].filter(isImage),
 );
