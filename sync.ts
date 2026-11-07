@@ -67,6 +67,8 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
   let sent: Picked | undefined;
   let sentJson = "";
   let latest: Picked | undefined;
+  /** The reactive object Slidev gave `init`, so a resend sees the live state, not the last write. */
+  let live: object | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const warned = new Set<string>();
 
@@ -99,6 +101,7 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
         return undefined;
       }
       onUpdate = update as (data: Partial<object>) => void;
+      live = state;
       latest = pick(state);
       return (current, updating) => {
         if (!isPresenter() || updating) {
@@ -135,8 +138,8 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
       onUpdate?.(data);
     },
     resend() {
-      if (latest) {
-        emit(latest, true);
+      if (live) {
+        emit(pick(live), true);
       }
     },
   };

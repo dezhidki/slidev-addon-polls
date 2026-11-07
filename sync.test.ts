@@ -143,3 +143,14 @@ test("a message over the presenter cap is dropped with one warning", (t) => {
   assert.equal(sent.length, 0);
   assert.equal(warn.mock.callCount(), 1);
 });
+
+test("resend sends the live state, even when no write was accepted yet", (t) => {
+  const { slide, state, write, sent, flags } = rig(t);
+  flags.presenter = false;
+  write(state);
+  state.page = 5;
+  flags.presenter = true;
+  slide.resend();
+  assert.equal(sent.length, 1);
+  assert.equal((sent[0] as { data: { page: number } }).data.page, 5);
+});
