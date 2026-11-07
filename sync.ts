@@ -34,7 +34,7 @@ export interface SlideSyncOptions {
   send: (msg: SyncMessage) => void;
   /** Only the presenter tab's changes go out. */
   isPresenter: () => boolean;
-  /** Whether the drawings channel is synced too (`polls.showDrawings`). Task 6. */
+  /** Whether the drawings channel is synced too (`polls.showDrawings`). */
   drawings: boolean;
 }
 
@@ -71,6 +71,43 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
   let live: object | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const warned = new Set<string>();
+  /** The drawings channel: Slidev's reactive object, the last string sent per page, a flush timer. */
+  let onDrawings: ((data: Partial<object>) => void) | undefined;
+  let liveDrawings: Record<string, string | undefined> | undefined;
+  const sentDrawings = new Map<string, string>();
+  let drawTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function warnOnce(key: string, text: string): void {
+    if (!warned.has(key)) {
+      warned.add(key);
+      console.warn(`[slidev-addon-polls] ${text}`);
+    }
+  }
+
+  /** Sends one page's drawing, unless it is too big; true when it went out. */
+  function emitDrawing(page: string, svg: string): boolean {
+    const msg = { type: "sync", channel: "drawings", data: { [page]: svg } } as SyncMessage;
+    if (new TextEncoder().encode(JSON.stringify(msg)).length > PRESENTER_MAX_PAYLOAD) {
+      warnOnce(
+        `drawings ${page}`,
+        `The drawing on page ${page} is too big to sync to the screens.`,
+      );
+      return false;
+    }
+    sentDrawings.set(page, svg);
+    send(msg);
+    return true;
+  }
+
+  /** Sends every page that differs from what was last sent (a cleared page as ""). */
+  function flushDrawings(): void {
+    drawTimer = undefined;
+    for (const [page, svg = ""] of Object.entries(liveDrawings ?? {})) {
+      if (svg !== (sentDrawings.get(page) ?? "")) {
+        emitDrawing(page, svg);
+      }
+    }
+  }
 
   function emit(picked: Picked, force = false): void {
     clearTimeout(timer);
@@ -81,13 +118,10 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
     }
     const msg = { type: "sync", channel: "shared", data: picked } as SyncMessage;
     if (new TextEncoder().encode(JSON.stringify(msg)).length > PRESENTER_MAX_PAYLOAD) {
-      const key = `shared ${picked.page}`;
-      if (!warned.has(key)) {
-        warned.add(key);
-        console.warn(
-          `[slidev-addon-polls] The slide state on page ${picked.page} is too big to sync to the screens.`,
-        );
-      }
+      warnOnce(
+        `shared ${picked.page}`,
+        `The slide state on page ${picked.page} is too big to sync to the screens.`,
+      );
       return;
     }
     sent = picked;
@@ -97,6 +131,17 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
 
   const sync: Sync = {
     init(channelKey, update, state) {
+      if (options.drawings && channelKey.endsWith(" - drawings")) {
+        onDrawings = update as (data: Partial<object>) => void;
+        liveDrawings = state as Record<string, string | undefined>;
+        return (current, updating) => {
+          if (!isPresenter() || updating) {
+            return;
+          }
+          liveDrawings = current as Record<string, string | undefined>;
+          drawTimer ??= setTimeout(flushDrawings, POINTER_MS);
+        };
+      }
       if (!channelKey.endsWith(" - shared")) {
         return undefined;
       }
@@ -129,7 +174,14 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
   return {
     sync,
     receive(msg) {
-      if (msg.channel !== "shared" || isPresenter()) {
+      if (isPresenter()) {
+        return;
+      }
+      if (msg.channel === "drawings") {
+        onDrawings?.(msg.data);
+        return;
+      }
+      if (msg.channel !== "shared") {
         return;
       }
       const data = Object.fromEntries(
@@ -140,6 +192,11 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
     resend() {
       if (live) {
         emit(pick(live), true);
+      }
+      for (const [page, svg] of Object.entries(liveDrawings ?? {})) {
+        if (svg) {
+          emitDrawing(page, svg);
+        }
       }
     },
   };

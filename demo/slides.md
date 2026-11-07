@@ -5,6 +5,7 @@ addons:
 title: Slidev polls demo
 polls:
   showSlides: true
+  showDrawings: true
   # url: https://your-public-host/vote
 ---
 

@@ -25,6 +25,15 @@ function baseState() {
   };
 }
 
+function drawingRig(t: TestContext) {
+  const r = rig(t, true);
+  const state: Record<number, string | undefined> = {};
+  const write = r.slide.sync.init("Deck - drawings", (data) => r.updates.push(data), state);
+  assert.ok(write);
+  return { ...r, drawState: state, drawWrite: write };
+}
+const data = (m: SyncMessage | undefined) => (m as { data: unknown }).data;
+
 function rig(t: TestContext, drawings = false) {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const sent: SyncMessage[] = [];
@@ -153,4 +162,73 @@ test("resend sends the live state, even when no write was accepted yet", (t) => 
   slide.resend();
   assert.equal(sent.length, 1);
   assert.equal((sent[0] as { data: { page: number } }).data.page, 5);
+});
+
+test("drawings go out page by page, only changed pages, at most every 100 ms", (t) => {
+  const { sent, drawWrite, tick } = drawingRig(t);
+  drawWrite({ 1: "a" });
+  drawWrite({ 1: "ab" });
+  assert.equal(sent.length, 0);
+  tick(100);
+  assert.deepEqual(sent, [{ type: "sync", channel: "drawings", data: { "1": "ab" } }]);
+  drawWrite({ 1: "ab", 2: "c" });
+  tick(100);
+  assert.equal(sent.length, 2);
+  assert.deepEqual(data(sent[1]), { "2": "c" });
+  drawWrite({ 1: "", 2: "c" });
+  tick(100);
+  assert.equal(sent.length, 3);
+  assert.deepEqual(data(sent[2]), { "1": "" });
+});
+
+test("drawings are sent by the presenter only, and not for updating writes", (t) => {
+  const { sent, drawWrite, flags, tick } = drawingRig(t);
+  drawWrite({ 1: "a" }, true);
+  flags.presenter = false;
+  drawWrite({ 1: "a" });
+  tick(100);
+  assert.equal(sent.length, 0);
+});
+
+test("a drawing too big to send is skipped with one warning", (t) => {
+  const { sent, drawWrite, tick } = drawingRig(t);
+  const warn = t.mock.method(console, "warn", () => {});
+  drawWrite({ 1: "x".repeat(300 * 1024) });
+  tick(100);
+  drawWrite({ 1: "y".repeat(300 * 1024) });
+  tick(100);
+  assert.equal(sent.length, 0);
+  assert.equal(warn.mock.callCount(), 1);
+  drawWrite({ 1: "z".repeat(300 * 1024), 2: "small" });
+  tick(100);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(data(sent[0]), { "2": "small" });
+});
+
+test("the shared and drawings oversize warnings do not suppress each other", (t) => {
+  const { state, write, drawWrite, tick } = drawingRig(t);
+  const warn = t.mock.method(console, "warn", () => {});
+  write({ ...state, cursor: { x: 1, y: "x".repeat(300 * 1024) } as never });
+  drawWrite({ 2: "x".repeat(300 * 1024) });
+  tick(100);
+  assert.equal(warn.mock.callCount(), 2);
+});
+
+test("resend sends every drawn page on its own", (t) => {
+  const { slide, drawState, sent } = drawingRig(t);
+  Object.assign(drawState, { 1: "a", 2: "", 3: "c" });
+  slide.resend();
+  const drawings = sent.filter((m) => m.channel === "drawings");
+  assert.deepEqual(drawings.map(data), [{ "1": "a" }, { "3": "c" }]);
+});
+
+test("received drawings reach Slidev as is, but not in the presenter tab", (t) => {
+  const { slide, updates, flags } = drawingRig(t);
+  const msg: SyncMessage = { type: "sync", channel: "drawings", data: { "1": "<path/>" } };
+  flags.presenter = false;
+  slide.receive(msg);
+  assert.deepEqual(updates, [{ "1": "<path/>" }]);
+  flags.presenter = true;
+  slide.receive(msg);
+  assert.equal(updates.length, 1);
 });

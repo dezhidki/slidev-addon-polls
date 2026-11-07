@@ -216,6 +216,11 @@ polls:
 - **Builds:** the voting page embeds the built deck. The addon syncs the presenter's page,
   clicks and pointer through the poll server (see "Polls with static builds"), and only
   the presenter can move them. A phone that joins mid-talk lands on the current slide.
+- **Drawings:** set `polls.showDrawings: true` and the phones show what the presenter draws
+  with Slidev's pen, and clear when the presenter clears. This works in builds only: the
+  dev server always sends drawings to viewers. Only the presenter's drawings sync. A page
+  whose drawing passes 256 kB stops syncing, with a console warning. Without
+  `showDrawings`, drawings stay on the presenter's machine.
 - **Spoilers:** phones load the whole deck, so a quiz's answer can be read in its
   JavaScript. Keep `showSlides` off for a quiz that must stay secret.
 
