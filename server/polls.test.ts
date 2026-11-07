@@ -415,7 +415,11 @@ test("a new presenter tab wipes the old tab's drawings from the screens, also fr
 
   const late = await join(url, { role: "display" });
   await after(120);
-  assert.equal(late.sync.length, 0, "no stale strokes for a screen that joins later");
+  assert.deepEqual(
+    late.sync,
+    [{ type: "sync", channel: "drawings", data: { "3": "", "4": "" } }],
+    "a screen that joins later, or was offline during the wipe, drops its stale strokes",
+  );
   for (const peer of [presenter, screen, reloaded, late]) {
     peer.close();
   }

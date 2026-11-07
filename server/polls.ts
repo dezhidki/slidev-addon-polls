@@ -158,11 +158,12 @@ export function attachPolls(httpServer: UpgradableServer, options: PollOptions =
     clients.set(socket, { role, voter: msg.voter ?? "" });
     // A fresh presenter tab (a reload, a later talk) has no drawings and resends only what it
     // has, so strokes kept from before would stay on every screen, and its Clear can't reach
-    // them. Wipe them everywhere; the resend that follows repaints the tab's own.
+    // them. Wipe them everywhere; the resend that follows repaints the tab's own. The ""s stay
+    // stored: Slidev merges a replay into what a screen has, so a screen that was offline
+    // during the wipe needs them to drop its old strokes.
     if (role === "presenter" && Object.keys(synced.drawings).length) {
       const cleared = Object.fromEntries(Object.keys(synced.drawings).map((page) => [page, ""]));
       relay({ type: "sync", channel: "drawings", data: cleared });
-      synced.drawings = Object.create(null);
     }
     if (role === "display") {
       if (Object.keys(synced.shared).length) {
