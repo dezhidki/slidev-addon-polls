@@ -123,6 +123,23 @@ test("received slide state reaches Slidev with null as undefined, but not in the
   assert.equal(updates.length, 1);
 });
 
+test("received slide state older than what the screen shows is dropped, a pointer move of the same moment is not", (t) => {
+  const { slide, state, updates, flags } = rig(t);
+  flags.presenter = false;
+  state.lastUpdate = { ...lastUpdate, time: 10 };
+  const at = (time: number, cursor?: { x: number; y: number }): SyncMessage => ({
+    type: "sync",
+    channel: "shared",
+    data: { page: 3, cursor: cursor ?? null, lastUpdate: { ...lastUpdate, time } },
+  });
+  slide.receive(at(5));
+  assert.equal(updates.length, 0, "a change the projector already has from Slidev");
+  slide.receive(at(10, { x: 1, y: 1 }));
+  assert.equal(updates.length, 1, "a pointer move carries the same lastUpdate");
+  slide.receive(at(11));
+  assert.equal(updates.length, 2);
+});
+
 test("channels other than shared are not ours", (t) => {
   const { slide } = rig(t);
   assert.equal(

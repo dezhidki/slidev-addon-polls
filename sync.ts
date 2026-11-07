@@ -184,6 +184,14 @@ export function createSlideSync(options: SlideSyncOptions): SlideSync {
       if (msg.channel !== "shared") {
         return;
       }
+      // The projector has each change from Slidev's BroadcastChannel a round trip before the
+      // server's copy, so a fast presenter would send it back a slide. Same-time messages
+      // still apply: pointer moves keep the lastUpdate of the page they are on.
+      const time = msg.data.lastUpdate?.time;
+      const shown = (live as { lastUpdate?: { time?: number } } | undefined)?.lastUpdate?.time;
+      if (time !== undefined && shown !== undefined && time < shown) {
+        return;
+      }
       const data = Object.fromEntries(
         Object.entries(msg.data satisfies SharedSync).map(([k, v]) => [k, v ?? undefined]),
       );
