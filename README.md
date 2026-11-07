@@ -115,7 +115,7 @@ Notes:
 ### Use `<PollSet />` to chain questions
 
 `<PollSet>` allows to specify multiple polls that are chained together.
-The chained polls are shown one at a a time; moving to the next fragment moves to the next poll.
+The chained polls are shown one at a time; moving to the next fragment moves to the next poll.
 
 This is mainly useful if you want to fit multiple (e.g. 3+) polls on the same slide and maybe also have
 some other content shown at the same time (e.g. a piece of code).
