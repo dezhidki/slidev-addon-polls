@@ -336,6 +336,8 @@ test("presenters prove themselves on the socket address, and only they may send 
   const phone = await join(url, { voter: "ann" });
   phone.say(define(9)); // about 18 kB
   assert.equal(await phone.closed, 1009);
+  wrong.say(define(9)); // a wrong token gets a phone's cap
+  assert.equal(await wrong.closed, 1009);
   await after(120);
   assert.equal(seen(presenter).polls.length, 50, "the presenter's 100 kB message went through");
   for (const peer of [presenter, wrong, missing, screen, phone]) {
