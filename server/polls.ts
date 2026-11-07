@@ -166,8 +166,15 @@ export function attachPolls(httpServer: UpgradableServer, options: PollOptions =
     }
   }
 
-  /** Keeps what the presenter's deck shows and passes it to the screens as it came. */
+  /**
+   * Keeps what the presenter's deck shows and passes it to the screens as it came. Only with
+   * a token: without one any phone may open a presenter socket, and drawings end up in the
+   * screens' DOM, so relaying would let anyone move every screen and run script on it.
+   */
   function relay(msg: Message<"sync">): void {
+    if (!token) {
+      return;
+    }
     Object.assign(synced[msg.channel], msg.data);
     for (const [screen, client] of clients) {
       if (client.role === "display") {

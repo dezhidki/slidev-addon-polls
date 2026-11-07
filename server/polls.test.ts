@@ -353,6 +353,24 @@ test("without a server token, a socket opened as presenter may present", async (
   http.close();
 });
 
+test("without a server token, nobody's slide state reaches the screens, not even late ones", async () => {
+  const { http, url } = await serve();
+  const presenter = await join(url, { role: "presenter" });
+  const screen = await join(url, { role: "display" });
+  presenter.say({ type: "sync", channel: "shared", data: { page: 4 } });
+  presenter.say({ type: "sync", channel: "drawings", data: { "4": "<image/>" } });
+  await after(120);
+  assert.equal(screen.sync.length, 0);
+
+  const late = await join(url, { role: "display" });
+  await after(120);
+  assert.equal(late.sync.length, 0);
+  for (const peer of [presenter, screen, late]) {
+    peer.close();
+  }
+  http.close();
+});
+
 test("the presenter's slide state reaches every screen and only screens, also late ones", async () => {
   const { http, url } = await serve({ token: "secret" });
   const presenter = await join(url, { role: "presenter", token: "secret" });
