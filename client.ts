@@ -27,6 +27,18 @@ const RETRY_MS = 2000;
 export const settings: PollSettings = (configs as { polls?: PollSettings }).polls ?? {};
 
 /**
+ * Whether this deck is the copy embedded in a phone's voting page: a frame whose parent is
+ * that page, marked with `data-slides`. A QR code there would only point at itself.
+ */
+export const onVotingPage = (() => {
+  try {
+    return window.parent !== window && "slides" in window.parent.document.documentElement.dataset;
+  } catch {
+    return false; // a cross-origin parent throws, and is not our page
+  }
+})();
+
+/**
  * The presenter password, from the first place that has one: the `?password=` of the
  * address Slidev's remote-control link opens (kept for reloads, since Slidev may drop it
  * from the address), then the dev server's `--remote` value.

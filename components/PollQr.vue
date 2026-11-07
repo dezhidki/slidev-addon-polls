@@ -8,12 +8,14 @@
  * Address, first match wins: the `url` prop, `polls.url` in the headmatter, the page's own
  * origin — or the dev server's LAN address while you are browsing on localhost.
  *
+ * Renders nothing in the copy of the deck on the phones' voting page.
+ *
  * @author Claude
  * @author Denis Zhidkikh
  */
 import QRCode from "qrcode";
 import { computed, ref, watchEffect } from "vue";
-import { polls, settings } from "../client";
+import { onVotingPage, polls, settings } from "../client";
 
 const props = defineProps<{
   /** Where the phones should go. Overrides everything else. */
@@ -48,7 +50,7 @@ watchEffect(async () => {
 </script>
 
 <template>
-  <figure class="poll-qr">
+  <figure v-if="!onVotingPage" class="poll-qr">
     <!-- Always black on white, whatever the slide's colours: that is what phones scan best. -->
     <div class="poll-qr-code" role="img" :aria-label="`QR code for ${url}`" v-html="svg" />
     <!-- <wbr>: if the address has to wrap, wrap it before the path, not mid-word. -->

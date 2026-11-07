@@ -248,6 +248,7 @@ polls:
   viewers. Only the presenter's drawings sync. A page whose drawing passes 256 kB stops
   syncing, with a warning in the presenter's console. Without `showDrawings`, drawings stay
   on the presenter's machine.
+- **QR codes:** the phones' copy of the slides leaves them out.
 - **Spoilers:** phones load the whole deck, so a quiz's answer can be read in its
   JavaScript. Keep `showSlides` off for a quiz that must stay secret.
 

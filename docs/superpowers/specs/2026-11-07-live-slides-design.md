@@ -116,7 +116,9 @@ Both the dev middleware and `generateBundle` apply it. No protocol change.
 - `x-if`, not `x-show`: with slides off, the deck is never loaded.
 
 The embedded deck connects to the poll server as a `display`, like any other screen, so
-polls on the slide and floating reactions appear as on the projector.
+polls on the slide and floating reactions appear as on the projector. Only `<PollQr>`
+renders nothing there (`onVotingPage` in `client.ts`: the frame's same-origin parent has
+`data-slides`), since a phone cannot scan its own screen.
 
 ## Part 3: sync for builds
 
