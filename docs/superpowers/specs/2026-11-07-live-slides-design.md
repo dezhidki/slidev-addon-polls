@@ -102,14 +102,24 @@ Both the dev middleware and `generateBundle` apply it. No protocol change.
 
 **Layout** (`server/vote.html`, `server/vote.ts`):
 
-- A "Show slides" / "Hide slides" toggle at the top, only when `data-slides` is set.
-  Starts on, because the deck opted in. The choice is kept in `localStorage`
-  (`poll-slides`).
-- When on: `<iframe src="<base>?embedded=true">` at the deck's aspect ratio. In portrait
-  it is full width and sticky at the top. In landscape the slides and the polls sit side by
-  side: the slides on the left, as tall as the space above the reaction bar allows and at
-  most about 60% of the width, the polls on the right, scrolling on their own, with the
-  toggle at their top.
+- A bar between the slides and the polls, only when `data-slides` is set: under the
+  slides in portrait, between the columns in landscape. It is a focusable separator (an
+  `<hr>` with `aria-valuenow` in percent). Dragging it (pointer capture,
+  `touch-action: none`) or the arrow keys (5%; Home and End go to the ends) resize the
+  slides. The size is kept in `localStorage` (`poll-slides-size`):
+  - portrait: the slides' height as a share of the viewport height, from 20% up to full
+    width, and never more than 60%;
+  - landscape: the slides column's width as a share of the viewport width, 30% to 75%;
+  - no saved size: full width in portrait, 60% in landscape.
+- A button on the bar ("Hide slides" / "Show slides") turns the slides off and on. Starts
+  on, because the deck opted in. The choice is kept in `localStorage` (`poll-slides`).
+  Hidden, the bar stays as a slim strip at the top (portrait) or on the left (landscape)
+  with only that button.
+- When on: `<iframe src="<base>?embedded=true">` at the deck's aspect ratio, fitted and
+  centred in the slides' box. In portrait the slides and the bar are sticky at the top. In
+  landscape the slides column runs the height of the space above the reaction bar; the
+  slide fits the column's width and is centred vertically, or fits its height and is
+  centred horizontally when the column is short. The polls on the right scroll on their own.
 - `pointer-events: none` on the iframe. Taps and swipes on Slidev's play view navigate
   locally, which would take the phone off the presenter's slide. Being exactly the
   slide's aspect ratio also keeps Slidev's nav bar hidden.

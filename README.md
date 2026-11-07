@@ -291,7 +291,9 @@ On the phone:
 - Taps on the slide do nothing.
 - Turned sideways, the slides and the polls sit side by side, and the polls scroll on
   their own.
-- A **Hide slides** button turns the slides off for that phone. The phone remembers, and a
+- Drag the bar between the slides and the polls to resize the slides, or focus it and use
+  the arrow keys. The phone remembers the size.
+- The arrow button on that bar hides the slides for that phone. The phone remembers, and a
   hidden deck is not loaded at all.
 - The phone's copy of the slides leaves out the QR codes.
 

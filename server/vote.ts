@@ -89,6 +89,18 @@ const voter = voterId();
 const drafts: Record<string, string> = {};
 let socket: WebSocket | undefined;
 let coolTimer: ReturnType<typeof setTimeout> | undefined;
+/** Where a drag on the resize bar took hold: the pointer's position and the slides' size. */
+let grab: { from: number; size: number } | undefined;
+
+/** How far each key moves the resize bar, in percent; Home and End go all the way. */
+const KEY_STEPS: Partial<Record<string, number>> = {
+  ArrowUp: -5,
+  ArrowLeft: -5,
+  ArrowDown: 5,
+  ArrowRight: 5,
+  Home: -Infinity,
+  End: Infinity,
+};
 
 /** Sends one message, and says whether it went. Nothing is queued while offline. */
 function send(msg: ClientMessage): boolean {
@@ -118,9 +130,72 @@ Alpine.data("votePage", () => ({
   showSlides: load<boolean>("poll-slides") ?? true,
   slidesUrl: `${base}?embedded=true`,
 
+  /**
+   * The size set with the resize bar, in percent of the viewport: the slides' height when
+   * stacked, their column's width side by side. `null` keeps the default layout.
+   */
+  size: load<number>("poll-slides-size") ?? null,
+  vw: innerWidth,
+  vh: innerHeight,
+
   toggleSlides(): void {
     this.showSlides = !this.showSlides;
     save("poll-slides", this.showSlides);
+  },
+
+  measure(): void {
+    this.vw = innerWidth;
+    this.vh = innerHeight;
+  },
+
+  /** Matches CSS's `orientation: landscape`, where the slides sit beside the polls. */
+  get landscape(): boolean {
+    return this.vw > this.vh;
+  },
+
+  /** The size's range. The CSS clamps it the same way, so a rotated phone still fits. */
+  get bounds(): [number, number] {
+    if (this.landscape) {
+      return [30, 75];
+    }
+    // Full width at most, and never so tall that the polls disappear.
+    return [20, Math.min((100 * this.vw) / Number(this.slidesRatio) / this.vh, 60)];
+  },
+
+  clamp(size: number): number {
+    const [min, max] = this.bounds;
+    return Math.max(min, Math.min(size, max));
+  },
+
+  /** The size on screen; the defaults match the CSS's: full width, or 60% beside the polls. */
+  get slidesSize(): number {
+    return this.clamp(this.size ?? (this.landscape ? 60 : 100));
+  },
+
+  startDrag(event: PointerEvent): void {
+    (event.currentTarget as Element).setPointerCapture(event.pointerId);
+    grab = { from: this.landscape ? event.clientX : event.clientY, size: this.slidesSize };
+  },
+
+  drag(event: PointerEvent): void {
+    if (grab) {
+      const moved = (this.landscape ? event.clientX : event.clientY) - grab.from;
+      this.size = this.clamp(grab.size + (100 * moved) / (this.landscape ? this.vw : this.vh));
+    }
+  },
+
+  endDrag(): void {
+    grab = undefined;
+    save("poll-slides-size", this.size);
+  },
+
+  resizeByKey(event: KeyboardEvent): void {
+    const step = KEY_STEPS[event.key];
+    if (step !== undefined) {
+      event.preventDefault();
+      this.size = this.clamp(this.slidesSize + step);
+      save("poll-slides-size", this.size);
+    }
   },
 
   init(): void {
