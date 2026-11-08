@@ -200,6 +200,7 @@ Notes:
 - Every phone downloads them, so keep each file to tens of kB.
 - Full URLs work too, but then every phone fetches from that host, which the venue's wifi may not reach.
 - Animated emotes keep playing on the phone's buttons even with reduced motion on.
+- The demo deck's emotes are from [Noto Animated Emoji](https://googlefonts.github.io/noto-emoji-animation/), CC BY 4.0.
 
 ### Show the slides on phones
 

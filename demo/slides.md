@@ -51,18 +51,19 @@ Go back, close the poll, and come here again to see the phones switch.
 
 ---
 polls:
-  reactions: ["👏", "emotes/party.png", "emotes/wave.gif"]
+  reactions: ["❓", "emotes/clap.gif", "emotes/party.gif", "emotes/fire.gif"]
 ---
 
 # Another normal slide
 
-This slide has its own reactions: 👏 and two animated emotes, `party.png` (an APNG)
-and `wave.gif`. Phones switch their row when you arrive here.
+This slide has its own reactions: ❓ and three animated emotes from
+[Noto Animated Emoji](https://googlefonts.github.io/noto-emoji-animation/) (CC BY 4.0).
+Phones switch their row when you arrive here.
 
 ```yaml
 ---
 polls:
-  reactions: ["👏", "emotes/party.png", "emotes/wave.gif"]
+  reactions: ["❓", "emotes/clap.gif", "emotes/party.gif", "emotes/fire.gif"]
 ---
 ```
 
