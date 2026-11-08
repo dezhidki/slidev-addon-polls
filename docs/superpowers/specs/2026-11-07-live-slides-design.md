@@ -106,11 +106,16 @@ Both the dev middleware and `generateBundle` apply it. No protocol change.
   slides in portrait, between the columns in landscape. It is a focusable separator (an
   `<hr>` with `aria-valuenow` in percent). Dragging it (pointer capture,
   `touch-action: none`) or the arrow keys (5%; Home and End go to the ends) resize the
-  slides. The size is kept in `localStorage` (`poll-slides-size`):
-  - portrait: the slides' height as a share of the viewport height, from 20% up to full
-    width, and never more than 60%;
-  - landscape: the slides column's width as a share of the viewport width, 30% to 75%;
-  - no saved size: full width in portrait, 60% in landscape.
+  slides. The slides start as large as fits with the question visible; a size you set is
+  remembered. Only a drag or a key saves it to `localStorage` (`poll-slides-size`), never
+  a load, a rotation or a clamp:
+  - portrait: the slides' height as a share of the viewport height, from 20% up to the
+    smaller of full width and the space above the reaction bar less the resize bar and
+    8rem for the poll's question;
+  - landscape: the slides column's width as a share of the viewport width, from 30% up to
+    the smaller of the viewport less the resize bar and 18rem for the polls, and the
+    space above the reaction bar times the slide's ratio;
+  - no saved size: the maximum, which follows the viewport as it changes.
 - A button on the bar ("Hide slides" / "Show slides") turns the slides off and on. Starts
   on, because the deck opted in. The choice is kept in `localStorage` (`poll-slides`).
   Hidden, the bar stays as a slim strip at the top (portrait) or on the left (landscape)

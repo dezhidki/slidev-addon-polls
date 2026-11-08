@@ -92,6 +92,9 @@ let coolTimer: ReturnType<typeof setTimeout> | undefined;
 /** Where a drag on the resize bar took hold: the pointer's position and the slides' size. */
 let grab: { from: number; size: number } | undefined;
 
+/** One rem in pixels, for the lengths `vote.html` sets the slides' range with. */
+const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+
 /** How far each key moves the resize bar, in percent; Home and End go all the way. */
 const KEY_STEPS: Partial<Record<string, number>> = {
   ArrowUp: -5,
@@ -132,11 +135,14 @@ Alpine.data("votePage", () => ({
 
   /**
    * The size set with the resize bar, in percent of the viewport: the slides' height when
-   * stacked, their column's width side by side. `null` keeps the default layout.
+   * stacked, their column's width side by side. `null` until the bar is moved: then the
+   * slides take the largest size that fits, and follow it when the viewport changes.
    */
   size: load<number>("poll-slides-size") ?? null,
   vw: innerWidth,
   vh: innerHeight,
+  /** The reaction bar's height, safe area included; 0 while it is hidden. */
+  reactionBar: 0,
 
   toggleSlides(): void {
     this.showSlides = !this.showSlides;
@@ -155,11 +161,15 @@ Alpine.data("votePage", () => ({
 
   /** The size's range. The CSS clamps it the same way, so a rotated phone still fits. */
   get bounds(): [number, number] {
+    const ratio = Number(this.slidesRatio);
+    const cap = this.vh - this.reactionBar;
+    const divider = 2.75 * rem;
     if (this.landscape) {
-      return [30, 75];
+      // 18rem left for the polls, and the slide never taller than the space above the bar.
+      return [30, (100 * Math.min(this.vw - divider - 18 * rem, cap * ratio)) / this.vw];
     }
-    // Full width at most, and never so tall that the polls disappear.
-    return [20, Math.min((100 * this.vw) / Number(this.slidesRatio) / this.vh, 60)];
+    // Full width at most, and 8rem left under the bar for the poll's question.
+    return [20, (100 * Math.min(this.vw / ratio, cap - divider - 8 * rem)) / this.vh];
   },
 
   clamp(size: number): number {
@@ -167,9 +177,9 @@ Alpine.data("votePage", () => ({
     return Math.max(min, Math.min(size, max));
   },
 
-  /** The size on screen; the defaults match the CSS's: full width, or 60% beside the polls. */
+  /** The size on screen: the saved size within the range, or the largest that fits. */
   get slidesSize(): number {
-    return this.clamp(this.size ?? (this.landscape ? 60 : 100));
+    return this.clamp(this.size ?? Number.POSITIVE_INFINITY);
   },
 
   startDrag(event: PointerEvent): void {
@@ -186,7 +196,10 @@ Alpine.data("votePage", () => ({
 
   endDrag(): void {
     grab = undefined;
-    save("poll-slides-size", this.size);
+    // A tap that never moved the bar leaves the size to follow the largest that fits.
+    if (this.size !== null) {
+      save("poll-slides-size", this.size);
+    }
   },
 
   resizeByKey(event: KeyboardEvent): void {
@@ -201,6 +214,11 @@ Alpine.data("votePage", () => ({
   init(): void {
     this.connect();
     this.tick();
+    // The reaction bar comes and goes with the connection; the slides' range leaves room for it.
+    const bar = document.getElementById("reactions") as Element;
+    new ResizeObserver(() => {
+      this.reactionBar = bar.getBoundingClientRect().height;
+    }).observe(bar);
   },
 
   // ---- what is on screen -------------------------------------------------------------

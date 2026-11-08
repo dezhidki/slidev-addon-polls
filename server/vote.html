@@ -31,7 +31,10 @@
       color: var(--fg);
       font: 1.0625rem/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       -webkit-tap-highlight-color: transparent;
+      /* The height above the reaction bar. */
+      --cap: 100dvh;
     }
+    body.has-reactions { --cap: calc(100dvh - var(--bar) - env(safe-area-inset-bottom)); }
     ::selection { background: var(--fg); color: var(--bg); }
     main { max-width: 34rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
 
@@ -64,10 +67,12 @@
     .toggle:hover { color: var(--fg); background: var(--tint); }
     .deck:not(:has(.slides)) .toggle svg { rotate: 180deg; }
 
-    /* Stacked in portrait: slides at most full width, and never so tall the polls disappear. */
+    /* The size the resize bar sets, as large as fits until it is moved; `vote.ts` keeps the
+       same range for the bar. Stacked in portrait: at most full width, and 8rem left under
+       the bar for the poll's question. */
     @media (orientation: portrait) {
       .deck { position: sticky; top: 0; z-index: 2; background: var(--bg); }
-      .slides { height: clamp(20dvh, var(--slides-size, 100) * 1dvh, min(100vw / var(--ratio), 60dvh)); }
+      .slides { height: clamp(20dvh, var(--slides-size, 100) * 1dvh, min(100vw / var(--ratio), var(--cap) - 2.75rem - 8rem)); }
       .divider { height: 2.75rem; border-bottom-width: 1px; }
     }
     /* Side by side in landscape, or the slides would take the whole first screen: the page
@@ -75,16 +80,15 @@
        beside them. */
     @media (orientation: landscape) {
       body:has(.deck) {
-        --cap: 100dvh;
         display: grid;
         grid-template: "offline offline" auto "deck polls" 1fr / auto 1fr;
         height: var(--cap);
         min-height: 0;
       }
-      body.has-reactions:has(.deck) { --cap: calc(100dvh - var(--bar) - env(safe-area-inset-bottom)); }
       body:has(.deck) #offline { grid-area: offline; }
       .deck { grid-area: deck; display: flex; min-height: 0; }
-      .slides { width: clamp(30vw, var(--slides-size, 60) * 1vw, 75vw); }
+      /* 18rem left for the polls, and the slide never taller than the space above the bar. */
+      .slides { width: clamp(30vw, var(--slides-size, 100) * 1vw, min(100vw - 2.75rem - 18rem, var(--cap) * var(--ratio))); }
       .divider { width: 2.75rem; border-right-width: 1px; }
       .grip { cursor: col-resize; }
       .grip::before { width: 0.25rem; height: 2.5rem; }
