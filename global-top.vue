@@ -2,22 +2,39 @@
 /**
  * Reactions: emoji the audience taps on their phones float up the side of the slide.
  * Each emoji rises from its own spot, so a hall of hearts reads as one stream of hearts.
- * In presenter mode the corner also counts them for the current slide.
+ * In presenter mode the corner also counts them for the current slide. With reduced motion,
+ * every other view shows those counts still, at the bottom right, instead of floating them.
  *
- * Headmatter, or any slide's frontmatter:
+ * Headmatter, or any slide's frontmatter (both under `polls:`):
  *
- *     reactions: false                 # off
- *     reactions: ["👏", "😮", "❓"]     # your own set
+ *     polls:
+ *       reactions: false               # off
+ *       reactions: ["👏", "😮", "❓"]   # your own set
  *
  * @author Claude
  * @author Denis Zhidkikh
  */
 import { useNav } from "@slidev/client";
-import { ref, watch } from "vue";
-import { polls } from "./client";
-import type { Tally } from "./protocol.ts";
+import { computed, ref, watch } from "vue";
+import { polls, settings } from "./client";
+import { isImage, type PollSettings, reactionUrl, slideReactions, type Tally } from "./protocol.ts";
 
-const { isPresenter, isPrintMode } = useNav();
+const { isPresenter, isPrintMode, slides } = useNav();
+
+const base = import.meta.env.BASE_URL;
+
+/** Every image reaction in the deck, loaded up front so the first tap floats at once. */
+const images = computed(() =>
+  [
+    ...new Set(
+      slides.value.flatMap((route) => {
+        // Slidev leaves `route.meta.slide` untyped here.
+        const info = route.meta?.slide as { frontmatter?: { polls?: PollSettings } } | undefined;
+        return slideReactions(settings, info?.frontmatter?.polls).reactions;
+      }),
+    ),
+  ].filter(isImage),
+);
 
 /** One emoji on its way up the side of the slide. */
 interface Floater {
@@ -37,11 +54,13 @@ let nextId = 0;
 const lanes = new Map<string, number>();
 
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
+const still = ref(calm.matches);
+calm.addEventListener("change", () => (still.value = calm.matches));
 
 /** Sends one burst of reactions up the side of the slide. */
 function float(counts: Tally): void {
-  if (calm.matches) {
-    return; // the presenter's count still moves
+  if (still.value) {
+    return; // the tally shows the counts instead
   }
   for (const [emoji, count] of Object.entries(counts)) {
     if (!lanes.has(emoji)) {
@@ -77,12 +96,24 @@ const land = (id: number) => {
 
 <template>
   <div v-if="!isPrintMode" class="reactions" aria-hidden="true">
+    <div hidden>
+      <img v-for="src in images" :key="src" :src="reactionUrl(src, base)" alt="" />
+    </div>
     <span v-for="f in floaters" :key="f.id" class="floater" :style="f.style" @animationend="land(f.id)">
-      {{ f.emoji }}
+      <img v-if="isImage(f.emoji)" :src="reactionUrl(f.emoji, base)" alt="" />
+      <template v-else>{{ f.emoji }}</template>
     </span>
 
-    <p v-if="isPresenter && Object.keys(polls.state.tally).length" class="tally">
-      <span v-for="(count, emoji) in polls.state.tally" :key="emoji">{{ emoji }} {{ count }}</span>
+    <p
+      v-if="(isPresenter || still) && Object.keys(polls.state.tally).length"
+      class="tally"
+      :class="{ still: !isPresenter }"
+    >
+      <span v-for="(count, emoji) in polls.state.tally" :key="emoji">
+        <img v-if="isImage(emoji)" :src="reactionUrl(emoji, base)" alt="" />
+        <template v-else>{{ emoji }}</template>
+        {{ count }}
+      </span>
     </p>
   </div>
 </template>
@@ -97,8 +128,9 @@ const land = (id: number) => {
 
 .floater {
   position: absolute;
-  /* Hugs the right edge, where slides keep their margin, so content stays readable. */
-  right: calc(12px + var(--lane) * 24px);
+  /* Hugs the right edge, where slides keep their margin, so content stays readable. 40px is
+     12px of air plus the 28px the sway may carry it right, so it never leaves the slide. */
+  right: calc(40px + var(--lane) * 24px);
   bottom: 40px;
   font-size: calc(26px * var(--size));
   line-height: 1;
@@ -126,6 +158,16 @@ const land = (id: number) => {
   }
 }
 
+/* Slidev's base CSS makes an img a block, which would put the tally's count under it. */
+.floater img,
+.tally img {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
 .tally {
   position: absolute;
   top: 10px;
@@ -139,5 +181,11 @@ const land = (id: number) => {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
+}
+/* Where the floaters would rise, clear of the QR code's top right corner. */
+.tally.still {
+  top: auto;
+  bottom: 40px;
+  right: 40px;
 }
 </style>

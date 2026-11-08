@@ -170,9 +170,10 @@ Defaults: on, with 👍 👎 🤔 ❤️, and one reaction per person every 3 se
 for the whole deck in the headmatter, or for one slide in its frontmatter:
 
 ```yaml
-reactions: false # turn off
-reactions: ["👏", "🤯", "❓"] # your own set
-reactionCooldown: 1 # seconds between reactions per person (default 3)
+polls:
+  reactions: false # turn off
+  reactions: ["👏", "🤯", "❓"] # your own set
+  reactionCooldown: 1 # seconds between reactions per person (default 3)
 ```
 
 Notes:
@@ -182,6 +183,65 @@ Notes:
 - The server only accepts emoji that the current slide lists.
 - A flood of reactions thins out on screen instead of slowing it down.
 - People who prefer reduced motion see the counts without the floating.
+
+#### Custom emotes
+
+A reaction can also be an image. Put the files in your deck's `public/` folder and list their paths:
+
+```yaml
+polls:
+  reactions: ["👍", "emotes/catjam.png", "emotes/party.gif"]
+```
+
+Notes:
+
+- Anything ending in `.png`, `.apng`, `.gif`, `.webp`, `.avif`, `.svg`, `.jpg` or `.jpeg` is an image.
+  Animated ones (APNG, GIF, WebP) animate.
+- Every phone downloads them, so keep each file to tens of kB.
+- Full URLs work too, but then every phone fetches from that host, which the venue's wifi may not reach.
+- Animated emotes keep playing on the phone's buttons even with reduced motion on.
+
+### Show the slides on phones
+
+Handy in big halls where the back rows can't read the screen. Turn it on in the headmatter:
+
+```yaml
+polls:
+  showSlides: true
+  showDrawings: true # also the presenter's drawings (static builds only)
+```
+
+The voting page then shows the slides above the polls, or next to them in landscape.
+They follow the presenter: page, clicks and the laser pointer.
+The bar between the slides and the polls resizes them, and its button hides them.
+The slides start as large as fits with the question visible; a size someone sets is remembered.
+
+Notes:
+
+- On the dev server, Slidev's own sync moves the slides. In a static build, the poll server
+  syncs them and only the presenter can move them. This needs `TOKEN`, see
+  [Polls with static builds](#polls-with-static-builds).
+- `showDrawings` needs `showSlides`. On the dev server, Slidev sends the drawings to everyone anyway.
+  A page whose drawing grows past 256 kB stops syncing, with a warning in the presenter's console.
+- Phones load the whole deck, so a quiz's answer can be read from its JavaScript.
+- On the dev server, every phone loads the deck's unbundled modules from your laptop (503 requests,
+  15.6 MB for the demo deck). For a big room, use a static build.
+
+## Settings
+
+All settings live under `polls:` in the headmatter:
+
+| Setting                  | Does                                           | Per slide |
+| ------------------------ | ---------------------------------------------- | --------- |
+| `polls.url`              | Voting page address, see below                 | no        |
+| `polls.reactions`        | Which [reactions](#reactions) to show          | yes       |
+| `polls.reactionCooldown` | Seconds between one person's reactions         | yes       |
+| `polls.showSlides`       | [Slides on phones](#show-the-slides-on-phones) | no        |
+| `polls.showDrawings`     | The presenter's drawings too (static builds)   | no        |
+
+A slide can set its own `reactions` and `reactionCooldown` under `polls:` in its frontmatter.
+
+Before 0.5.0 these were top-level keys (`pollUrl`, `reactions`, `reactionCooldown`). The old names no longer work.
 
 ## Running a poll
 
@@ -194,15 +254,19 @@ The controls appear under each poll, in presenter mode only:
 
 Answers are kept in memory for as long as the slidev server is running.
 
+On the dev server, Slidev hands the `--remote` password to every browser that opens the deck,
+and its sync takes slide changes from anyone. For a big or untrusted room, use a static build.
+
 ## Setting the voting page URL
 
 The QR code and address on the slides come from the first of these that applies:
 
-1. `pollUrl` in the headmatter. Set this when your public address differs from the one
+1. `polls.url` in the headmatter. Set this when your public address differs from the one
    you browse, e.g. with `slidev --remote --tunnel`:
 
    ```yaml
-   pollUrl: https://something.trycloudflare.com/vote
+   polls:
+     url: https://something.trycloudflare.com/vote
    ```
 
 2. The address you opened the slides at, unless it is `localhost`.
@@ -234,6 +298,9 @@ In addition to that, you will need to run your own polling backend as follows:
    Node, add `--experimental-strip-types`.
 
 2. Proxy `<deck url>/polls` to it, including WebSocket upgrades.
+3. Open the presenter view as `<deck url>/presenter?password=<TOKEN>`.
+
+Without `TOKEN`, anyone can present, and the slides on phones don't follow the presenter.
 
 ## Development
 
@@ -241,7 +308,7 @@ In addition to that, you will need to run your own polling backend as follows:
 npm install     # also builds the voting page
 npm run build   # rebuild dist/vote.html after changing server/vote.*
 npm run dev     # demo deck with --remote (builds first)
-npm test        # the protocol's parsers and the server
+npm test        # the protocol's parsers, the server and the slide sync
 npm run typecheck
 npm run lint
 ```

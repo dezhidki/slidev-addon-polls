@@ -16,14 +16,17 @@ import {
   type ClientMessage,
   type ControlMessage,
   DEFAULT_COOLDOWN,
+  MAX_PAYLOAD,
   MAX_WORD,
   type Phase,
   type PollDef,
   type PollView,
+  PRESENTER_MAX_PAYLOAD,
   PRESENTER_ONLY,
   parseClientMessage,
   type Role,
   type ServerMessage,
+  type SharedSync,
   type Tally,
 } from "../protocol.ts";
 
@@ -37,7 +40,6 @@ const LENIENCY = 300;
 const REACTION_FLUSH = 150;
 /** Milliseconds a state broadcast waits, so 300 votes become a handful of messages. */
 const BROADCAST_COALESCE = 50;
-const MAX_PAYLOAD = 16 * 1024;
 
 /** One member of the {@link ClientMessage} union, picked by its `type`. */
 type Message<T extends ClientMessage["type"]> = Extract<ClientMessage, { type: T }>;
@@ -107,14 +109,14 @@ function freshRound(options: string[] | null, lastRound: number) {
 /**
  * Serves the poll protocol on `httpServer` at `<base>/polls`.
  *
- * @returns the WebSocket server, so a caller can close it.
+ * A socket may present only if its address has a `presenter` parameter and, when the
+ * server has a token, a matching `token` parameter. Such sockets may send larger messages.
  */
-export function attachPolls(
-  httpServer: UpgradableServer,
-  options: PollOptions = {},
-): WebSocketServer {
+export function attachPolls(httpServer: UpgradableServer, options: PollOptions = {}): void {
   const { token, joinUrl } = options;
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD });
+  /** Upgrades only sockets whose address proved they may present, so its `clients` say who may. */
+  const presenterWss = new WebSocketServer({ noServer: true, maxPayload: PRESENTER_MAX_PAYLOAD });
   /** Sockets that have said hello. Anything not in here is ignored and never sent to. */
   const clients = new Map<WebSocket, Client>();
   /** Polls are never deleted: a poll's answers outlive edits to the slide it is on. */
@@ -132,6 +134,11 @@ export function attachPolls(
   /** Slide number to the reactions counted on it. */
   const tally = new Map<number, Tally>();
   let burst: Tally = {};
+  /** The merged data of each `sync` channel, for screens that connect late. */
+  const synced: { shared: SharedSync; drawings: Record<string, string> } = {
+    shared: Object.create(null),
+    drawings: Object.create(null),
+  };
   let stateTimer: ReturnType<typeof setTimeout> | undefined;
   let burstTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -143,11 +150,45 @@ export function attachPolls(
 
   function hello(socket: WebSocket, msg: Message<"hello">): void {
     let role = msg.role;
-    if (role === "presenter" && token && msg.token !== token) {
+    if (role === "presenter" && !presenterWss.clients.has(socket)) {
       send(socket, { type: "denied" });
       role = "display";
     }
     clients.set(socket, { role, voter: msg.voter ?? "" });
+    // A fresh presenter tab (a reload, a later talk) has no drawings and resends only what it
+    // has, so strokes kept from before would stay on every screen, and its Clear can't reach
+    // them. Wipe them everywhere; the resend that follows repaints the tab's own. The ""s stay
+    // stored: Slidev merges a replay into what a screen has, so a screen that was offline
+    // during the wipe needs them to drop its old strokes.
+    if (role === "presenter" && Object.keys(synced.drawings).length) {
+      const cleared = Object.fromEntries(Object.keys(synced.drawings).map((page) => [page, ""]));
+      relay({ type: "sync", channel: "drawings", data: cleared });
+    }
+    if (role === "display") {
+      if (Object.keys(synced.shared).length) {
+        send(socket, { type: "sync", channel: "shared", data: synced.shared });
+      }
+      if (Object.keys(synced.drawings).length) {
+        send(socket, { type: "sync", channel: "drawings", data: synced.drawings });
+      }
+    }
+  }
+
+  /**
+   * Keeps what the presenter's deck shows and passes it to the screens as it came. Only with
+   * a token: without one any phone may open a presenter socket, and drawings end up in the
+   * screens' DOM, so relaying would let anyone move every screen and run script on it.
+   */
+  function relay(msg: Message<"sync">): void {
+    if (!token) {
+      return;
+    }
+    Object.assign(synced[msg.channel], msg.data);
+    for (const [screen, client] of clients) {
+      if (client.role === "display") {
+        send(screen, msg);
+      }
+    }
   }
 
   // Re-defining a poll keeps its votes: Slidev re-mounts slides all the time, and an edited
@@ -382,18 +423,24 @@ export function attachPolls(
       case "react":
         react(socket, msg);
         break;
+      case "sync":
+        relay(msg);
+        break;
     }
   }
 
   httpServer.on("upgrade", (req, socket, head) => {
     // Anything else (Vite's HMR socket) is someone else's.
-    if (!new URL(req.url ?? "/", "http://x").pathname.endsWith("/polls")) {
+    const { pathname, searchParams } = new URL(req.url ?? "/", "http://x");
+    if (!pathname.endsWith("/polls")) {
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws));
+    const presenter =
+      searchParams.has("presenter") && (!token || searchParams.get("token") === token);
+    (presenter ? presenterWss : wss).handleUpgrade(req, socket, head, connection);
   });
 
-  wss.on("connection", (socket: WebSocket) => {
+  function connection(socket: WebSocket): void {
     socket.on("error", () => {}); // a dropped phone is not an emergency
     socket.on("close", () => {
       clients.delete(socket);
@@ -412,11 +459,9 @@ export function attachPolls(
         return;
       }
       handle(socket, msg);
-      if (msg.type !== "react") {
+      if (msg.type !== "react" && msg.type !== "sync") {
         broadcast();
       }
     });
-  });
-
-  return wss;
+  }
 }

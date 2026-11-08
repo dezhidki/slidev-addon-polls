@@ -13,26 +13,51 @@ import configs from "#slidev/configs";
 import {
   type ClientMessage,
   type PollDef,
+  type PollSettings,
   type PollView,
   parseServerMessage,
   type Tally,
 } from "./protocol.ts";
+import { createSlideSync } from "./sync.ts";
 
 /** Milliseconds before a lost or refused connection is tried again. */
 const RETRY_MS = 2000;
 
-/** Headmatter this addon reads, which Slidev's own config type does not know about. */
-export interface PollConfig {
-  /** Address of the voting page to put in the QR code, for a deck hosted somewhere public. */
-  pollUrl?: string;
-  /** `false` for no reactions, a list of emoji for your own set, anything else = default. */
-  reactions?: unknown;
-  /** Seconds one person waits between two reactions. */
-  reactionCooldown?: number;
+/** The deck's `polls:` headmatter. */
+export const settings: PollSettings = (configs as { polls?: PollSettings }).polls ?? {};
+
+/**
+ * Whether this deck is the copy embedded in a phone's voting page: a frame whose parent is
+ * that page, marked with `data-slides`. A QR code there would only point at itself.
+ */
+export const onVotingPage = (() => {
+  try {
+    return window.parent !== window && "slides" in window.parent.document.documentElement.dataset;
+  } catch {
+    return false; // a cross-origin parent throws, and is not our page
+  }
+})();
+
+/**
+ * The presenter password, from the first place that has one: the `?password=` of the
+ * address Slidev's remote-control link opens (kept for reloads, since Slidev may drop it
+ * from the address), then the dev server's `--remote` value.
+ */
+function presenterToken(): string | undefined {
+  const fromAddress = new URLSearchParams(location.search).get("password");
+  const remote = typeof configs.remote === "string" ? configs.remote : undefined;
+  try {
+    if (fromAddress) {
+      sessionStorage.setItem("poll-token", fromAddress);
+    }
+    return sessionStorage.getItem("poll-token") ?? remote;
+  } catch {
+    // Storage can throw (private mode, blocked cookies); the address still counts.
+    return fromAddress ?? remote;
+  }
 }
 
-/** The deck's headmatter, including this addon's own keys. */
-export const pollConfig = configs as typeof configs & PollConfig;
+const token = presenterToken();
 
 /** A poll this deck declares, and how many copies of it are on screen right now. */
 interface MountedPoll {
@@ -88,6 +113,11 @@ class PollsClient {
   /** Earliest time another connection attempt may be made, so failures don't spin. */
   #nextAttempt = 0;
 
+  /** Whether this tab is the presenter's. */
+  get presenter(): boolean {
+    return this.#presenter;
+  }
+
   /**
    * Says one thing to the server, opening the connection first if it is not up. Nothing is
    * queued while it opens: {@link #greet} tells the server everything again anyway.
@@ -108,7 +138,9 @@ class PollsClient {
     this.#reactions = reactions;
     this.#cooldown = cooldown;
     // A display has nothing to announce, so it greets the server to get itself a socket.
-    if (roleChanged || !this.#socket) {
+    if (roleChanged && this.#socket) {
+      this.#reconnect();
+    } else if (!this.#socket) {
       this.#greet();
     } else {
       this.#announce();
@@ -169,6 +201,12 @@ class PollsClient {
     }
     this.#nextAttempt = now + RETRY_MS;
     const url = new URL(`${import.meta.env.BASE_URL}polls`, location.href.replace(/^http/, "ws"));
+    if (this.#presenter) {
+      url.searchParams.set("presenter", "");
+      if (token) {
+        url.searchParams.set("token", token);
+      }
+    }
     const socket = new WebSocket(url);
     this.#socket = socket;
     socket.onopen = () => this.#greet();
@@ -179,10 +217,24 @@ class PollsClient {
     };
   }
 
+  /** The server decides who may present when the socket opens, so a new role needs a new socket. */
+  #reconnect(): void {
+    if (this.#socket) {
+      this.#socket.onclose = null;
+      this.#socket.close();
+    }
+    this.#socket = undefined;
+    this.#nextAttempt = 0;
+    this.state.denied = false;
+    this.#connect();
+  }
+
   /** First thing said on a new socket: who we are, then what our screen shows. */
   #greet(): void {
-    const token = typeof pollConfig.remote === "string" ? pollConfig.remote : undefined;
-    this.send({ type: "hello", role: this.#presenter ? "presenter" : "display", token });
+    this.send({ type: "hello", role: this.#presenter ? "presenter" : "display" });
+    if (this.#presenter) {
+      slideSync?.resend();
+    }
     this.#announce();
   }
 
@@ -221,6 +273,10 @@ class PollsClient {
       this.state.denied = true;
       return;
     }
+    if (msg.type === "sync") {
+      slideSync?.receive(msg);
+      return;
+    }
     if (msg.type === "reactions") {
       this.state.tally = msg.tally;
       this.state.burst = msg.burst;
@@ -236,3 +292,16 @@ class PollsClient {
 
 /** This tab's connection to the poll server. */
 export const polls = new PollsClient();
+
+/**
+ * Mirrors the presenter's page, clicks and pointer to the other screens. Only in a static
+ * build, where Slidev's own sync cannot cross devices; global-bottom.vue registers it.
+ */
+export const slideSync =
+  !__SLIDEV_HAS_SERVER__ && settings.showSlides
+    ? createSlideSync({
+        send: (msg) => polls.send(msg),
+        isPresenter: () => polls.presenter,
+        drawings: settings.showDrawings === true,
+      })
+    : undefined;

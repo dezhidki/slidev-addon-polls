@@ -3,7 +3,10 @@ theme: default
 addons:
   - "@/.." # this repo; in your own deck: slidev-addon-polls
 title: Slidev polls demo
-# pollUrl: https://your-public-host/vote
+polls:
+  showSlides: true
+  showDrawings: true
+  # url: https://your-public-host/vote
 ---
 
 # Live polls for Slidev
@@ -47,17 +50,19 @@ Go back, close the poll, and come here again to see the phones switch.
 -->
 
 ---
-reactions: ["👏", "🤯", "❓"]
+polls:
+  reactions: ["👏", "emotes/party.png", "emotes/wave.gif"]
 ---
 
 # Another normal slide
 
-This slide has its own reactions: 👏 🤯 ❓. Phones switch their emoji row when you
-arrive here.
+This slide has its own reactions: 👏 and two animated emotes, `party.png` (an APNG)
+and `wave.gif`. Phones switch their row when you arrive here.
 
 ```yaml
 ---
-reactions: ["👏", "🤯", "❓"]
+polls:
+  reactions: ["👏", "emotes/party.png", "emotes/wave.gif"]
 ---
 ```
 

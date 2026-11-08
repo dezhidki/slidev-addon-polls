@@ -5,15 +5,17 @@
  *
  *     <PollQr class="w-60" />
  *
- * Address, first match wins: the `url` prop, `pollUrl` in the headmatter, the page's own
+ * Address, first match wins: the `url` prop, `polls.url` in the headmatter, the page's own
  * origin — or the dev server's LAN address while you are browsing on localhost.
+ *
+ * Renders nothing in the copy of the deck on the phones' voting page.
  *
  * @author Claude
  * @author Denis Zhidkikh
  */
 import QRCode from "qrcode";
 import { computed, ref, watchEffect } from "vue";
-import { pollConfig, polls } from "../client";
+import { onVotingPage, polls, settings } from "../client";
 
 const props = defineProps<{
   /** Where the phones should go. Overrides everything else. */
@@ -24,7 +26,7 @@ const onLocalhost = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostna
 const url = computed(
   () =>
     props.url ??
-    pollConfig.pollUrl ??
+    settings.url ??
     ((onLocalhost && polls.state.joinUrl) ||
       new URL(`${import.meta.env.BASE_URL}vote`, location.href).href),
 );
@@ -48,7 +50,7 @@ watchEffect(async () => {
 </script>
 
 <template>
-  <figure class="poll-qr">
+  <figure v-if="!onVotingPage" class="poll-qr">
     <!-- Always black on white, whatever the slide's colours: that is what phones scan best. -->
     <div class="poll-qr-code" role="img" :aria-label="`QR code for ${url}`" v-html="svg" />
     <!-- <wbr>: if the address has to wrap, wrap it before the path, not mid-word. -->

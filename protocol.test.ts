@@ -10,7 +10,16 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseClientMessage, parseServerMessage } from "./protocol.ts";
+import {
+  DEFAULT_REACTIONS,
+  isImage,
+  MAX_REACTION,
+  parseClientMessage,
+  parseServerMessage,
+  reactionLabel,
+  reactionUrl,
+  slideReactions,
+} from "./protocol.ts";
 
 const wire = (msg: unknown) => JSON.stringify(msg);
 
@@ -31,7 +40,6 @@ test("a socket that does not say who it is gets the least privileged role", () =
   assert.deepEqual(parseClientMessage(wire({ type: "hello", role: "presenter", token: "s" })), {
     type: "hello",
     role: "presenter",
-    token: "s",
   });
   assert.equal(parseClientMessage(wire({ type: "hello", role: "root" })), undefined);
   const long = wire({ type: "hello", voter: "v".repeat(65) });
@@ -92,7 +100,10 @@ test("answers need an id and a plausible answer", () => {
     parseClientMessage(wire({ type: "word", id: "a", text: "x".repeat(200) })),
     undefined,
   );
-  assert.equal(parseClientMessage(wire({ type: "react", emoji: "x".repeat(17) })), undefined);
+  assert.equal(
+    parseClientMessage(wire({ type: "react", emoji: "x".repeat(MAX_REACTION + 1) })),
+    undefined,
+  );
 });
 
 test("a state message arrives whole or not at all", () => {
@@ -137,4 +148,99 @@ test("a tally key named __proto__ cannot reach a prototype", () => {
   const burst = msg?.type === "reactions" ? msg.burst : {};
   assert.deepEqual(burst, { "👍": 3 });
   assert.equal(Object.getPrototypeOf({}), Object.prototype);
+});
+
+test("a slide's own polls settings beat the deck's, key by key", () => {
+  assert.deepEqual(slideReactions({}, undefined), {
+    reactions: DEFAULT_REACTIONS,
+    cooldown: undefined,
+  });
+  const deck = { reactions: ["👏"], reactionCooldown: 1 };
+  assert.deepEqual(slideReactions(deck, undefined), { reactions: ["👏"], cooldown: 1 });
+  assert.deepEqual(slideReactions(deck, { reactions: ["❓"] }), { reactions: ["❓"], cooldown: 1 });
+  assert.deepEqual(slideReactions(deck, { reactions: false }), { reactions: [], cooldown: 1 });
+  assert.deepEqual(slideReactions({ reactions: false }, { reactionCooldown: 5 }), {
+    reactions: [],
+    cooldown: 5,
+  });
+  assert.deepEqual(slideReactions({ reactions: "yes" }, undefined).reactions, DEFAULT_REACTIONS);
+  assert.deepEqual(slideReactions({ reactions: [1, "👍"] }, undefined).reactions, ["1", "👍"]);
+});
+
+const dataOf = (msg: ReturnType<typeof parseClientMessage>) =>
+  msg?.type === "sync" ? msg.data : msg;
+
+test("sync carries the presenter's slide state, and drawings by page number", () => {
+  const shared = {
+    type: "sync",
+    channel: "shared",
+    data: {
+      page: 3,
+      clicks: 1,
+      clicksTotal: 2,
+      cursor: null,
+      lastUpdate: { id: "a", type: "presenter", time: 5 },
+    },
+  };
+  assert.deepEqual(parseClientMessage(wire(shared)), shared);
+  assert.deepEqual(parseServerMessage(wire(shared)), shared);
+  assert.deepEqual(dataOf(parseClientMessage(wire({ ...shared, data: { page: 1, timer: {} } }))), {
+    page: 1,
+  });
+  const drawings = { type: "sync", channel: "drawings", data: { "3": "<path/>", "4": "" } };
+  assert.deepEqual(parseClientMessage(wire(drawings)), drawings);
+  assert.equal(parseClientMessage(wire({ ...drawings, data: { "3": 7 } })), undefined);
+  assert.equal(
+    parseClientMessage(wire({ ...drawings, data: { title: "<path/>" } })),
+    undefined,
+    "keys are page numbers",
+  );
+  // valibot drops a `__proto__` key instead of refusing the message (see the tally test).
+  assert.deepEqual(
+    dataOf(parseClientMessage('{"type":"sync","channel":"drawings","data":{"__proto__":"x"}}')),
+    {},
+  );
+  assert.equal(parseClientMessage(wire({ type: "sync", channel: "timer", data: {} })), undefined);
+});
+
+test("a reaction is an image when it ends in an image extension", () => {
+  for (const r of [
+    "emotes/a.png",
+    "https://x/a.webp?v=2",
+    "A.GIF",
+    "b.apng",
+    "c.avif",
+    "d.svg",
+    "e.jpg",
+    "f.jpeg",
+    "f.png#x",
+  ]) {
+    assert.ok(isImage(r), r);
+  }
+  for (const r of ["👍", "❤️", "png", "a.png.txt"]) {
+    assert.equal(isImage(r), false, r);
+  }
+});
+
+test("an image reaction is found under the deck's base, unless it is a full URL", () => {
+  assert.equal(reactionUrl("emotes/a.png", "/"), "/emotes/a.png");
+  assert.equal(reactionUrl("/emotes/a.png", "/talk/"), "/talk/emotes/a.png");
+  assert.equal(
+    reactionUrl("emotes/a.png", "http://h:3030/talk/"),
+    "http://h:3030/talk/emotes/a.png",
+  );
+  assert.equal(reactionUrl("https://cdn/x.gif", "/talk/"), "https://cdn/x.gif");
+  assert.equal(reactionUrl("//cdn/x.gif", "/"), "//cdn/x.gif");
+});
+
+test("an image reaction is named after its file", () => {
+  assert.equal(reactionLabel("emotes/catjam.png"), "catjam");
+  assert.equal(reactionLabel("https://x/y/party.gif?v=1"), "party");
+  assert.equal(reactionLabel("👍"), "👍");
+});
+
+test("a reaction can be a path of a few hundred characters", () => {
+  const path = `emotes/${"a".repeat(300)}.png`;
+  assert.ok(parseClientMessage(wire({ type: "slide", slide: 1, ids: [], reactions: [path] })));
+  assert.ok(parseClientMessage(wire({ type: "react", emoji: path })));
 });

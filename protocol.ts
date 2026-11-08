@@ -12,6 +12,11 @@
  */
 import * as v from "valibot";
 
+/** Most bytes one message from a phone or a display may hold. */
+export const MAX_PAYLOAD = 16 * 1024;
+/** Most bytes one message from an authenticated presenter may hold. */
+export const PRESENTER_MAX_PAYLOAD = 256 * 1024;
+
 /** Who is on the other end of a socket. Only a presenter may command the server. */
 export type Role = "presenter" | "display" | "audience";
 
@@ -78,24 +83,75 @@ export const PRESENTER_ONLY: ReadonlySet<ClientMessage["type"]> = new Set([
   "reveal",
   "reset",
   "remove",
+  "sync",
 ]);
 
 /** Seconds between two reactions from one person, unless the deck says otherwise. */
 export const DEFAULT_COOLDOWN = 3;
 
+/** The emoji phones offer when the deck does not say otherwise. */
+export const DEFAULT_REACTIONS = ["👍", "👎", "🤔", "❤️"];
+
+/** The deck's `polls:` headmatter. A slide's own `polls:` may set only the reaction keys. */
+export interface PollSettings {
+  /** Address of the voting page to put in the QR code, for a deck hosted somewhere public. */
+  url?: string;
+  /** `false` for no reactions, a list of emoji for your own set, anything else = default. */
+  reactions?: unknown;
+  /** Seconds one person waits between two reactions. */
+  reactionCooldown?: number;
+  showSlides?: boolean;
+  showDrawings?: boolean;
+}
+
+/** The reactions and cooldown a slide has: its own `polls:` beats the deck's, key by key. */
+export function slideReactions(
+  deck: PollSettings,
+  slide: PollSettings | undefined,
+): { reactions: string[]; cooldown: number | undefined } {
+  const setting = slide?.reactions ?? deck.reactions;
+  return {
+    reactions:
+      setting === false ? [] : Array.isArray(setting) ? setting.map(String) : DEFAULT_REACTIONS,
+    cooldown: slide?.reactionCooldown ?? deck.reactionCooldown,
+  };
+}
+
+/** Whether a reaction is an image file rather than an emoji. */
+export function isImage(reaction: string): boolean {
+  return /\.(png|apng|gif|webp|avif|svg|jpe?g)([?#].*)?$/i.test(reaction);
+}
+
+/** Where an image reaction is served: full URLs as they are, paths under the deck's base. */
+export function reactionUrl(reaction: string, base: string): string {
+  return /^(https?:)?\/\//.test(reaction)
+    ? reaction
+    : `${base.replace(/\/$/, "")}/${reaction.replace(/^\//, "")}`;
+}
+
+/** What a screen reader says for a reaction: an image's file name, else the emoji. */
+export function reactionLabel(reaction: string): string {
+  return isImage(reaction)
+    ? reaction
+        .replace(/[?#].*$/, "")
+        .replace(/^.*\//, "")
+        .replace(/\.[^.]+$/, "")
+    : reaction;
+}
+
 /** Longest word a cloud keeps; the server trims and cuts what it is sent to this. */
 export const MAX_WORD = 40;
 /** Longest voter id, which the server keeps one of per person who has answered. */
 const MAX_VOTER = 64;
-/** Longest emoji, which the server counts one of per reaction on a slide. */
-const MAX_EMOJI = 16;
+/** Longest reaction: an emoji, or the path or URL of an image. One is counted per slide. */
+export const MAX_REACTION = 512;
 /** Most seconds a deck may ask people to wait between reactions. */
 const MAX_COOLDOWN = 3600;
 
 /**
  * A string. The default cap is generous because only the three limits above are held in
  * memory per person or per word — the rest is the presenter's own text, and the socket's
- * 16 kB payload limit already bounds a message as a whole.
+ * payload limit already bounds a message as a whole.
  *
  * Empty is allowed on purpose: an empty option label is an authoring slip, and refusing
  * the message over one would take every other poll on the slide down with it.
@@ -109,7 +165,7 @@ const pollId = v.pipe(v.string(), v.nonEmpty(), v.maxLength(2048));
 const count = v.pipe(v.number(), v.integer(), v.minValue(0));
 
 const PhaseSchema = v.picklist(["idle", "open", "closed"] satisfies Phase[]);
-const TallySchema = v.record(text(MAX_EMOJI), count);
+const TallySchema = v.record(text(MAX_REACTION), count);
 
 // The schemas below describe the two types above. A drift between them is a compile
 // error where the parsed output meets them: `define()` in server/polls.ts, `byId` in
@@ -145,12 +201,44 @@ const ControlMessageSchema = v.object({
   id: pollId,
 });
 
+/** The presenter's slide state. Keys it does not know (Slidev also sends `timer`) are dropped. */
+const SharedSyncSchema = v.object({
+  page: v.optional(count),
+  clicks: v.optional(count),
+  clicksTotal: v.optional(count),
+  cursor: v.optional(
+    v.nullable(
+      v.object({
+        x: v.number(),
+        y: v.number(),
+        style: v.optional(v.picklist(["cursor", "laser"])),
+      }),
+    ),
+  ),
+  lastUpdate: v.optional(
+    v.nullable(
+      v.object({ id: text(), type: v.picklist(["presenter", "viewer"]), time: v.number() }),
+    ),
+  ),
+});
+
+/**
+ * Drawings are SVG markup keyed by page number. A plain string: a drawing outgrows the
+ * default cap, and the socket's payload limit already bounds it.
+ */
+const DrawingsSchema = v.record(v.pipe(v.string(), v.regex(/^\d+$/)), v.string());
+
+/** What the presenter's deck mirrors to the screens, one message per channel. */
+const SyncMessageSchema = v.variant("channel", [
+  v.object({ type: v.literal("sync"), channel: v.literal("shared"), data: SharedSyncSchema }),
+  v.object({ type: v.literal("sync"), channel: v.literal("drawings"), data: DrawingsSchema }),
+]);
+
 const ClientMessageSchema = v.variant("type", [
-  /** First message on every socket: who is connecting, and with what password. */
+  /** First message on every socket: who is connecting. A presenter proves itself on the socket address instead. */
   v.object({
     type: v.literal("hello"),
     role: v.optional(v.picklist(["presenter", "display", "audience"] satisfies Role[]), "audience"),
-    token: v.optional(text()),
     voter: v.optional(text(MAX_VOTER)),
   }),
   /** The presenter's screen declaring every poll it knows about. */
@@ -160,7 +248,7 @@ const ClientMessageSchema = v.variant("type", [
     type: v.literal("slide"),
     slide: count,
     ids: v.array(pollId),
-    reactions: v.array(text(MAX_EMOJI)),
+    reactions: v.array(text(MAX_REACTION)),
     /** Seconds. Out of range is pulled into range rather than dropping the message. */
     cooldown: v.optional(
       v.pipe(
@@ -177,7 +265,8 @@ const ClientMessageSchema = v.variant("type", [
   /** A phone answering a word cloud; the server trims and cuts it down to size. */
   v.object({ type: v.literal("word"), id: pollId, text: text(MAX_WORD * 4) }),
   /** A phone tapping an emoji. */
-  v.object({ type: v.literal("react"), emoji: text(MAX_EMOJI) }),
+  v.object({ type: v.literal("react"), emoji: text(MAX_REACTION) }),
+  SyncMessageSchema,
 ]);
 
 const ServerMessageSchema = v.variant("type", [
@@ -189,7 +278,7 @@ const ServerMessageSchema = v.variant("type", [
     slide: count,
     /** Poll ids on the presenter's screen right now. */
     visible: v.array(pollId),
-    reactions: v.array(text(MAX_EMOJI)),
+    reactions: v.array(text(MAX_REACTION)),
     /** Milliseconds one person waits between two reactions. */
     cooldown: count,
     tally: TallySchema,
@@ -201,7 +290,14 @@ const ServerMessageSchema = v.variant("type", [
   }),
   /** Reactions since the last burst, for the emoji that float up the slide. */
   v.object({ type: v.literal("reactions"), burst: TallySchema, tally: TallySchema }),
+  /** The presenter's slide state, passed on to the screens unchanged. */
+  SyncMessageSchema,
 ]);
+
+export type SyncMessage = v.InferOutput<typeof SyncMessageSchema>;
+
+/** The `shared` channel's data. */
+export type SharedSync = v.InferOutput<typeof SharedSyncSchema>;
 
 export type ControlMessage = v.InferOutput<typeof ControlMessageSchema>;
 

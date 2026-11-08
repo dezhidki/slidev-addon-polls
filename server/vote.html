@@ -17,6 +17,8 @@
     :root {
       color-scheme: light dark;
       --bg: #fff; --fg: #111; --quiet: #595959; --line: #cfcfcf; --tint: rgb(0 0 0 / 0.08);
+      /* The reaction bar's height: 3.25rem buttons, 0.6rem padding twice, 1px border. */
+      --bar: calc(3.25rem + 1.2rem + 1px);
     }
     @media (prefers-color-scheme: dark) {
       :root { --bg: #111; --fg: #f3f3f3; --quiet: #a6a6a6; --line: #444; --tint: rgb(255 255 255 / 0.12); }
@@ -29,25 +31,84 @@
       color: var(--fg);
       font: 1.0625rem/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       -webkit-tap-highlight-color: transparent;
+      /* The height above the reaction bar. */
+      --cap: 100dvh;
     }
+    body.has-reactions { --cap: calc(100dvh - var(--bar) - env(safe-area-inset-bottom)); }
     ::selection { background: var(--fg); color: var(--bg); }
     main { max-width: 34rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
 
     #offline {
-      position: sticky; top: 0; z-index: 1;
+      position: sticky; top: 0; z-index: 3;
       padding: 0.6rem 1.25rem;
       background: var(--fg); color: var(--bg);
       font-size: 0.9rem; text-align: center;
+    }
+
+    /* The deck's play view, read-only: taps go nowhere, Slidev's own sync moves it. The box
+       is as big as the resize bar makes it; the slide fits inside at its own ratio, centred. */
+    .slides { container-type: size; display: grid; place-items: center; }
+    .slides iframe {
+      display: block; width: min(100cqw, 100cqh * var(--ratio)); aspect-ratio: var(--ratio);
+      border: 0; background: #000; pointer-events: none;
+    }
+
+    /* The bar between the slides and the polls: drag it to resize them, its button hides them. */
+    .divider { display: grid; flex: none; border: 0 solid var(--line); user-select: none; }
+    .divider > * { grid-area: 1 / 1; }
+    .grip { display: grid; place-items: center; border: 0; overflow: visible; touch-action: none; cursor: row-resize; }
+    .grip::before { content: ""; width: 2.5rem; height: 0.25rem; border-radius: 1rem; background: var(--quiet); }
+    .grip:hover::before, .grip:active::before { background: var(--fg); }
+    .toggle {
+      justify-self: end; display: grid; place-items: center;
+      width: 2.75rem; height: 2.75rem; padding: 0;
+      border: 0; background: none; color: var(--quiet); cursor: pointer;
+    }
+    .toggle:hover { color: var(--fg); background: var(--tint); }
+    .deck:not(:has(.slides)) .toggle svg { rotate: 180deg; }
+
+    /* The size the resize bar sets, as large as fits until it is moved; `vote.ts` keeps the
+       same range for the bar. Stacked in portrait: at most full width, and 8rem left under
+       the bar for the poll's question. */
+    @media (orientation: portrait) {
+      .deck { position: sticky; top: 0; z-index: 2; background: var(--bg); }
+      .slides { height: clamp(20dvh, var(--slides-size, 100) * 1dvh, min(100vw / var(--ratio), var(--cap) - 2.75rem - 8rem)); }
+      .divider { height: 2.75rem; border-bottom-width: 1px; }
+    }
+    /* Side by side in landscape, or the slides would take the whole first screen: the page
+       ends at the reaction bar, the slides sit on the left, and the polls scroll on their own
+       beside them. */
+    @media (orientation: landscape) {
+      body:has(.deck) {
+        display: grid;
+        grid-template: "offline offline" auto "deck polls" 1fr / auto 1fr;
+        height: var(--cap);
+        min-height: 0;
+      }
+      body:has(.deck) #offline { grid-area: offline; }
+      .deck { grid-area: deck; display: flex; min-height: 0; }
+      /* 18rem left for the polls, and the slide never taller than the space above the bar. */
+      .slides { width: clamp(30vw, var(--slides-size, 100) * 1vw, min(100vw - 2.75rem - 18rem, var(--cap) * var(--ratio))); }
+      .divider { width: 2.75rem; border-right-width: 1px; }
+      .grip { cursor: col-resize; }
+      .grip::before { width: 0.25rem; height: 2.5rem; }
+      .toggle { justify-self: auto; align-self: start; }
+      .toggle svg { rotate: -90deg; }
+      .deck:not(:has(.slides)) .toggle svg { rotate: 90deg; }
+      body:has(.deck) main { grid-area: polls; overflow-y: auto; }
     }
 
     section + section { margin-top: 3rem; padding-top: 3rem; border-top: 1px solid var(--line); }
     h1 { font-size: 1.6rem; line-height: 1.15; letter-spacing: -0.01em; text-wrap: balance; }
     .hint { margin: 0.5rem 0 1.5rem; color: var(--quiet); }
     .empty h1 { margin-top: 20dvh; }
+    /* The slides above already push it down. */
+    body:has(.slides) .empty h1 { margin-top: 0; }
 
     .options { display: grid; gap: 0.6rem; }
     button, input { font: inherit; color: inherit; border-radius: 0.6rem; touch-action: manipulation; }
     :focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+    .divider :focus-visible { outline-offset: -3px; }
 
     .option {
       position: relative; overflow: hidden;
@@ -103,6 +164,7 @@
       border: 1.5px solid var(--line); background: none;
       font-size: 1.6rem; line-height: 1; cursor: pointer;
     }
+    #reactions img { width: 1em; height: 1em; object-fit: contain; vertical-align: middle; }
     #reactions button:active { border-color: var(--fg); }
     #reactions button.sent { animation: sent 0.35s cubic-bezier(0.2, 0.7, 0.3, 1); }
     /* Cooling down: the buttons sit out, and a line along the top runs out as they come back. */
@@ -130,9 +192,46 @@
     x-text="everConnected ? 'Connection lost. Reconnecting…' : 'Connecting…'"
   ></div>
 
-  <main id="polls" aria-live="polite" :class="{ empty: !visible.length }">
+  <template x-if="slidesRatio">
+    <div class="deck" @resize.window="measure()">
+      <!-- Inert: taps already go nowhere, and Tab must not reach the deck's own controls. -->
+      <template x-if="showSlides">
+        <div class="slides" inert :style="{ '--ratio': slidesRatio, '--slides-size': size }">
+          <iframe :src="slidesUrl" title="Slides"></iframe>
+        </div>
+      </template>
+      <!-- The <hr> is the resize handle (drag it, or the arrow keys); the button on top hides the slides. -->
+      <div class="divider">
+        <hr
+          class="grip"
+          tabindex="0"
+          aria-label="Resize slides"
+          x-show="showSlides"
+          :aria-orientation="landscape ? 'vertical' : 'horizontal'"
+          :aria-valuenow="Math.round(slidesSize)"
+          :aria-valuemin="Math.round(bounds[0])"
+          :aria-valuemax="Math.round(bounds[1])"
+          @pointerdown="startDrag($event)"
+          @pointermove="drag($event)"
+          @lostpointercapture="endDrag()"
+          @keydown="resizeByKey($event)"
+        >
+        <button
+          type="button"
+          class="toggle"
+          :aria-label="showSlides ? 'Hide slides' : 'Show slides'"
+          :title="showSlides ? 'Hide slides' : 'Show slides'"
+          @click="toggleSlides()"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>
+        </button>
+      </div>
+    </div>
+  </template>
+
+  <main id="polls" :class="{ empty: !visible.length }">
     <template x-if="!visible.length">
-      <section>
+      <section aria-live="polite">
         <h1>No poll right now</h1>
         <p class="hint">Keep this page open. The next poll shows up here by itself.</p>
       </section>
@@ -142,7 +241,7 @@
       <section>
         <!-- biome-ignore lint/a11y/useHeadingContent: Alpine fills it from the poll -->
         <h1 x-text="poll.question"></h1>
-        <p class="hint" x-text="hint(poll)"></p>
+        <p class="hint" aria-live="polite" x-text="hint(poll)"></p>
 
         <!-- A choice poll or a quiz: one button per option, with its share once it is shown. -->
         <template x-if="poll.options">
@@ -155,10 +254,11 @@
                   mine: answered(poll) === index,
                   wrong: poll.revealed && index !== poll.correct,
                 }"
+                :aria-pressed="answered(poll) === index"
                 :disabled="!online || poll.state !== 'open'"
                 @click="vote(poll, index)"
               >
-                <span class="bar" x-show="showResults(poll)" :style="`width:${share(poll, index)}%`"></span>
+                <span class="bar" x-show="showResults(poll)" :style="{ width: share(poll, index) + '%' }"></span>
                 <span class="dot"></span>
                 <span>
                   <span x-text="label"></span>
@@ -208,18 +308,20 @@
     style="display: none"
     x-show="online && reactions.length > 0"
     :class="{ cooling: cooling }"
-    :style="`--wait:${wait}ms`"
+    :style="{ '--wait': wait + 'ms' }"
   >
     <template x-for="emoji in reactions" :key="emoji">
       <button
         type="button"
-        x-text="emoji"
-        :aria-label="`React with ${emoji}`"
+        :aria-label="`React with ${label(emoji)}`"
         :class="{ sent: sent === emoji }"
         :disabled="cooling"
         @click="react(emoji)"
         @animationend="sent = ''"
-      ></button>
+      >
+        <template x-if="isImage(emoji)"><img :src="src(emoji)" alt=""></template>
+        <template x-if="!isImage(emoji)"><span x-text="emoji"></span></template>
+      </button>
     </template>
   </nav>
 

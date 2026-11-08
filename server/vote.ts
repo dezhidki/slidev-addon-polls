@@ -13,8 +13,11 @@ import Alpine from "alpinejs";
 import {
   type ClientMessage,
   DEFAULT_COOLDOWN,
+  isImage,
   type PollView,
   parseServerMessage,
+  reactionLabel,
+  reactionUrl,
   type ServerMessage,
   type WordCount,
 } from "../protocol.ts";
@@ -51,6 +54,12 @@ function save(key: string, value: unknown): void {
   }
 }
 
+/**
+ * The deck's address, with a trailing slash. The page lives at <base>vote (dev) or
+ * <base>vote/ (static hosts); the socket at <base>polls.
+ */
+const base = location.href.replace(/vote\/?(index\.html)?([?#].*)?$/, "");
+
 /** This phone's id. The server counts one answer per id per round, not per connection. */
 function voterId(): string {
   const saved = load<string>("poll-voter");
@@ -80,6 +89,21 @@ const voter = voterId();
 const drafts: Record<string, string> = {};
 let socket: WebSocket | undefined;
 let coolTimer: ReturnType<typeof setTimeout> | undefined;
+/** Where a drag on the resize bar took hold: the pointer's position and the slides' size. */
+let grab: { from: number; size: number } | undefined;
+
+/** One rem in pixels, for the lengths `vote.html` sets the slides' range with. */
+const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+
+/** How far each key moves the resize bar, in percent; Home and End go all the way. */
+const KEY_STEPS: Partial<Record<string, number>> = {
+  ArrowUp: -5,
+  ArrowLeft: -5,
+  ArrowDown: 5,
+  ArrowRight: 5,
+  Home: -Infinity,
+  End: Infinity,
+};
 
 /** Sends one message, and says whether it went. Nothing is queued while offline. */
 function send(msg: ClientMessage): boolean {
@@ -104,23 +128,117 @@ Alpine.data("votePage", () => ({
   /** Read by `cooling` and `wait`; moved on only when a cooldown starts or runs out. */
   now: Date.now(),
 
+  /** The slides' aspect ratio, when the deck shows them here. */
+  slidesRatio: document.documentElement.dataset.slides,
+  showSlides: load<boolean>("poll-slides") ?? true,
+  slidesUrl: `${base}?embedded=true`,
+
+  /**
+   * The size set with the resize bar, in percent of the viewport: the slides' height when
+   * stacked, their column's width side by side. `null` until the bar is moved: then the
+   * slides take the largest size that fits, and follow it when the viewport changes.
+   */
+  size: load<number>("poll-slides-size") ?? null,
+  vw: innerWidth,
+  vh: innerHeight,
+  /** The reaction bar's height, safe area included; 0 while it is hidden. */
+  reactionBar: 0,
+
+  toggleSlides(): void {
+    this.showSlides = !this.showSlides;
+    save("poll-slides", this.showSlides);
+  },
+
+  measure(): void {
+    this.vw = innerWidth;
+    this.vh = innerHeight;
+  },
+
+  /** Matches CSS's `orientation: landscape`, where the slides sit beside the polls. */
+  get landscape(): boolean {
+    return this.vw > this.vh;
+  },
+
+  /** The size's range. The CSS clamps it the same way, so a rotated phone still fits. */
+  get bounds(): [number, number] {
+    const ratio = Number(this.slidesRatio);
+    const cap = this.vh - this.reactionBar;
+    const divider = 2.75 * rem;
+    if (this.landscape) {
+      // 18rem left for the polls, and the slide never taller than the space above the bar.
+      return [30, (100 * Math.min(this.vw - divider - 18 * rem, cap * ratio)) / this.vw];
+    }
+    // Full width at most, and 8rem left under the bar for the poll's question.
+    return [20, (100 * Math.min(this.vw / ratio, cap - divider - 8 * rem)) / this.vh];
+  },
+
+  clamp(size: number): number {
+    const [min, max] = this.bounds;
+    return Math.max(min, Math.min(size, max));
+  },
+
+  /** The size on screen: the saved size within the range, or the largest that fits. */
+  get slidesSize(): number {
+    return this.clamp(this.size ?? Number.POSITIVE_INFINITY);
+  },
+
+  startDrag(event: PointerEvent): void {
+    (event.currentTarget as Element).setPointerCapture(event.pointerId);
+    grab = { from: this.landscape ? event.clientX : event.clientY, size: this.slidesSize };
+  },
+
+  drag(event: PointerEvent): void {
+    if (grab) {
+      const moved = (this.landscape ? event.clientX : event.clientY) - grab.from;
+      this.size = this.clamp(grab.size + (100 * moved) / (this.landscape ? this.vw : this.vh));
+    }
+  },
+
+  endDrag(): void {
+    grab = undefined;
+    // A tap that never moved the bar leaves the size to follow the largest that fits.
+    if (this.size !== null) {
+      save("poll-slides-size", this.size);
+    }
+  },
+
+  resizeByKey(event: KeyboardEvent): void {
+    const step = KEY_STEPS[event.key];
+    if (step !== undefined) {
+      event.preventDefault();
+      this.size = this.clamp(this.slidesSize + step);
+      save("poll-slides-size", this.size);
+    }
+  },
+
   init(): void {
     this.connect();
     this.tick();
+    // The reaction bar comes and goes with the connection; the slides' range leaves room for it.
+    const bar = document.getElementById("reactions") as Element;
+    new ResizeObserver(() => {
+      this.reactionBar = bar.getBoundingClientRect().height;
+    }).observe(bar);
   },
 
   // ---- what is on screen -------------------------------------------------------------
 
-  /** What the presenter shows now, plus anything still open from an earlier slide. */
+  /** What the presenter shows now, then anything still open from an earlier slide. */
   get visible(): PollView[] {
-    return this.state.polls.filter(
-      (poll) => this.state.visible.includes(poll.id) || poll.state === "open",
-    );
+    const shown = (poll: PollView) => this.state.visible.includes(poll.id);
+    return [
+      ...this.state.polls.filter(shown),
+      ...this.state.polls.filter((poll) => !shown(poll) && poll.state === "open"),
+    ];
   },
 
   get reactions(): string[] {
     return this.state.reactions;
   },
+
+  isImage,
+  label: reactionLabel,
+  src: (reaction: string) => reactionUrl(reaction, base),
 
   get cooling(): boolean {
     return this.now < this.coolUntil;
@@ -221,12 +339,7 @@ Alpine.data("votePage", () => ({
   // ---- the connection ----------------------------------------------------------------
 
   connect(): void {
-    // The page lives at <base>/vote (dev) or <base>/vote/ (static hosts); the socket at
-    // <base>/polls.
-    const base = location.href
-      .replace(/^http/, "ws")
-      .replace(/vote\/?(index\.html)?([?#].*)?$/, "");
-    socket = new WebSocket(`${base}polls`);
+    socket = new WebSocket(`${base.replace(/^http/, "ws")}polls`);
     socket.onopen = () => {
       this.online = true;
       this.everConnected = true;
