@@ -7,7 +7,7 @@ audience answers on their phones. The poll backend runs inside Slidev's own dev 
 there is no extra server; a static build uses a small standalone one.
 
 <div align="center">
-<video src="https://github.com/user-attachments/assets/debf54d3-6469-4dad-ad90-9fa196df4d1c"></video>
+<video src="https://github.com/user-attachments/assets/05d0b3d9-52b4-4044-99bc-63b8fa6c3e0c"></video>
 </div>
 
 ## Quick start
